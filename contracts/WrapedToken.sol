@@ -234,14 +234,35 @@ contract WRAPEDTOKEN is
         if (userBalance == 0) revert NoDeposit();
 
         uint256 totalSupply = totalSupply();
+        if (totalSupply == 0) revert NoDeposit();
+        
+        if (totalSupply == 0) revert NoDeposit();
+        
+        // Calculate user's proportional share of total payout funds
         uint256 userShare = (totalPayoutFunds * userBalance) / totalSupply;
 
         // Subtract what user has already claimed
         uint256 availableToClaim = userShare - user.totalPayoutBalance;
 
         if (availableToClaim == 0) revert NoPayout();
+        
+        // Ensure we don't try to transfer more than the contract has
+        uint256 contractBalance = payoutToken.balanceOf(address(this));
+        if (availableToClaim > contractBalance) {
+            availableToClaim = contractBalance;
+        }
+        
+        if (availableToClaim == 0) revert NoPayout();
+        
+        // Check if contract has enough payout tokens
+        uint256 contractBalance = payoutToken.balanceOf(address(this));
+        if (availableToClaim > contractBalance) {
+            availableToClaim = contractBalance;
+        }
+        
+        if (availableToClaim == 0) revert NoPayout();
 
-        user.totalPayoutBalance = userShare;
+        user.totalPayoutBalance += availableToClaim;
 
         if (!payoutToken.transfer(msg.sender, availableToClaim))
             revert TransferFailed();
@@ -249,7 +270,7 @@ contract WRAPEDTOKEN is
         emit PayoutClaimed(
             msg.sender,
             availableToClaim,
-            userShare - availableToClaim
+            userShare - user.totalPayoutBalance
         );
     }
 
@@ -263,6 +284,7 @@ contract WRAPEDTOKEN is
     {
         Investor storage user = investors[_user];
         if (user.deposited == 0) return (0, 0, 0);
+        if (user.emergencyUnlocked) return (0, user.totalPayoutBalance, 0);
 
         uint256 userBalance = balanceOf(_user);
         if (userBalance == 0) return (0, 0, 0);
@@ -273,6 +295,12 @@ contract WRAPEDTOKEN is
         totalAvailable = (totalPayoutFunds * userBalance) / totalSupply;
         claimed = user.totalPayoutBalance;
         claimable = totalAvailable > claimed ? totalAvailable - claimed : 0;
+        
+        // Ensure claimable doesn't exceed contract balance
+        uint256 contractBalance = payoutToken.balanceOf(address(this));
+        if (claimable > contractBalance) {
+            claimable = contractBalance;
+        }
     }
 
     // Emergency unlock feature - allows users to unlock tokens before maturity with penalty

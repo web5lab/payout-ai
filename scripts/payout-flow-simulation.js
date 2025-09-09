@@ -495,11 +495,21 @@ async function main() {
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
     await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout2);
 
+    // Debug: Check contract balances
+    const contractPayoutBalance = await payoutToken.balanceOf(await wrappedToken.getAddress());
+    const totalSupplyAfterBurn = await wrappedToken.totalSupply();
+    const totalPayoutFunds = await wrappedToken.totalPayoutFunds();
+    console.log(`🔍 Debug - Contract payout balance: ${formatUnits(contractPayoutBalance)}`);
+    console.log(`🔍 Debug - Total supply after burn: ${formatUnits(totalSupplyAfterBurn)}`);
+    console.log(`🔍 Debug - Total payout funds: ${formatUnits(totalPayoutFunds)}`);
+
     // Check payout balances
     const payoutBalance1 = await wrappedToken.getUserPayoutBalance(investor1.address);
     const payoutBalance2 = await wrappedToken.getUserPayoutBalance(investor2.address);
     console.log(`📊 Investor 1 claimable: ${formatUnits(payoutBalance1.claimable)} (should be 0)`);
     console.log(`📊 Investor 2 claimable: ${formatUnits(payoutBalance2.claimable)} (should get all)`);
+    console.log(`🔍 Debug - Investor 2 total available: ${formatUnits(payoutBalance2.totalAvailable)}`);
+    console.log(`🔍 Debug - Investor 2 already claimed: ${formatUnits(payoutBalance2.claimed)}`);
 
     // Investor 2 claims second payout
     console.log("🎁 Investor 2 claiming second payout...");
