@@ -26,7 +26,7 @@ async function assert(condition, message) {
 
 async function main() {
   console.log("🚀 Starting Comprehensive Offering Contract Simulation");
-  console.log("=" .repeat(60));
+  console.log("=".repeat(60));
 
   // Actors
   const [deployer, tokenOwner, treasuryOwner, investor1, investor2, investor3, payoutFunder, signer] = await ethers.getSigners();
@@ -103,8 +103,10 @@ async function main() {
   console.log("✅ Minted tokens to all participants");
 
   // Helper function to deploy offerings
-  async function deployOffering(config) {
+  async function deployOffering(config, customEscrow = null) {
     const timestamps = await getFreshTimestamps();
+    const escrowToUse = customEscrow || escrow;
+    
     const offeringConfig = {
       saleToken: await saleToken.getAddress(),
       minInvestment: parseUnits("100"), // $100 minimum
@@ -117,7 +119,7 @@ async function main() {
       fundraisingCap: parseUnits("100000"), // $100k cap
       tokenPrice: parseUnits("0.5"), // $0.5 per token
       tokenOwner: tokenOwner.address,
-      escrowAddress: await escrow.getAddress(),
+      escrowAddress: await escrowToUse.getAddress(),
       investmentManager: await investmentManager.getAddress(),
       payoutTokenAddress: await paymentToken.getAddress(),
       payoutRate: 1000, // 10% APY (in basis points)
@@ -618,10 +620,37 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
-    const { offering } = await deployOffering({ 
-      apyEnabled: false, 
-      autoTransfer: true 
-    });
+    // Deploy fresh offering for admin testing
+    const timestamps = await getFreshTimestamps();
+    const offeringConfig = {
+      saleToken: await saleToken.getAddress(),
+      minInvestment: parseUnits("100"),
+      maxInvestment: parseUnits("5000"),
+      startDate: timestamps.startDate,
+      endDate: timestamps.endDate,
+      maturityDate: timestamps.maturityDate,
+      autoTransfer: true,
+      apyEnabled: false,
+      fundraisingCap: parseUnits("100000"),
+      tokenPrice: parseUnits("0.5"),
+      tokenOwner: tokenOwner.address,
+      escrowAddress: await escrow.getAddress(),
+      investmentManager: await investmentManager.getAddress(),
+      payoutTokenAddress: await paymentToken.getAddress(),
+      payoutRate: 1000,
+      defaultPayoutFrequency: 2,
+      paymentTokens: [await paymentToken.getAddress()],
+      oracles: [await payOracle.getAddress()]
+    };
+
+    const tx = await offeringFactory.connect(deployer).createOfferingWithPaymentTokens(offeringConfig);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(log => log.fragment && log.fragment.name === 'OfferingDeployed');
+    const offeringAddress = event.args.offeringAddress;
+    const offering = await ethers.getContractAt("Offering", offeringAddress);
+
+    // Transfer sale tokens
+    await saleToken.connect(tokenOwner).transfer(offeringAddress, parseUnits("10000"));
 
     console.log("🔐 Testing role management...");
     
@@ -673,10 +702,6 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
-    // Deploy fresh escrow for this scenario
-    const FreshEscrow = await ethers.getContractFactory("Escrow");
-    const freshEscrow = await FreshEscrow.deploy({ owner: treasuryOwner.address });
-    
     // Create offering with smaller cap for testing
     const timestamps = await getFreshTimestamps();
     const smallCapConfig = {
@@ -691,7 +716,7 @@ async function main() {
       fundraisingCap: parseUnits("1000"), // Small $1000 cap
       tokenPrice: parseUnits("0.5"),
       tokenOwner: tokenOwner.address,
-      escrowAddress: await freshEscrow.getAddress(),
+      escrowAddress: await escrow.getAddress(),
       investmentManager: await investmentManager.getAddress(),
       payoutTokenAddress: await paymentToken.getAddress(),
       payoutRate: 1000,
@@ -710,9 +735,14 @@ async function main() {
     await saleToken.connect(tokenOwner).transfer(offeringAddress, parseUnits("10000"));
 
     await time.increaseTo(smallCapConfig.startDate + 10);
+      // Deploy fresh escrow for this scenario
+      const FreshEscrow5 = await ethers.getContractFactory("Escrow");
+      const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
+      
 
     // Investment that reaches the cap
-    const capReachingAmount = parseUnits("1000"); // Exactly the cap
+        autoTransfer: true,
+        customEscrow: freshEscrow5
     await paymentToken.connect(investor1).approve(offeringAddress, capReachingAmount);
     
     console.log("💸 Making investment that reaches fundraising cap...");
@@ -729,7 +759,7 @@ async function main() {
 
     // Try to invest after cap is reached (should fail)
     console.log("🔍 Testing investment after cap reached...");
-    const additionalAmount = parseUnits("100");
+      const investAmountUSDT = parseUnits("250", 6); // 250 USDT tokens (6 decimals) = $250
     await paymentToken.connect(investor2).approve(offeringAddress, additionalAmount);
     
     try {
