@@ -28,6 +28,10 @@ contract WrappedTokenFactory is Ownable {
     ) external returns (address wrappedTokenAddress) {
         WRAPEDTOKEN wrappedToken = new WRAPEDTOKEN(config);
         wrappedTokenAddress = address(wrappedToken);
+        
+        // Grant DEFAULT_ADMIN_ROLE to the original caller (not the factory)
+        bytes32 DEFAULT_ADMIN_ROLE = wrappedToken.DEFAULT_ADMIN_ROLE();
+        wrappedToken.grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         wrappedTokens[count] = wrappedTokenAddress;
         creators[wrappedTokenAddress] = msg.sender;

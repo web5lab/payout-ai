@@ -85,8 +85,13 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         payoutRate = config.payoutRate;
         offeringContract = config.offeringContract;
 
+        // Grant roles to the deployer (WrappedTokenFactory)
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAYOUT_ADMIN_ROLE, msg.sender);
+        
+        // Also grant DEFAULT_ADMIN_ROLE to the offering contract's deployer
+        // This is needed because the factory deploys the token, but we need the original deployer to have admin rights
+        // We'll handle this in the factory instead
     }
 
     modifier onlyOfferingContract() {

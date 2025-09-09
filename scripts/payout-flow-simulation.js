@@ -119,10 +119,37 @@ async function main() {
     const wrappedTokenAddress = await offering.wrappedTokenAddress();
     const wrappedToken = await ethers.getContractAt("WRAPEDTOKEN", wrappedTokenAddress);
     
-    // Grant payout admin role to payoutAdmin using AccessControl
-    // Grant payout admin role using the custom function
+    console.log(`🔑 Wrapped token deployed at: ${wrappedTokenAddress}`);
+    
+    // Check if deployer has DEFAULT_ADMIN_ROLE
+    const DEFAULT_ADMIN_ROLE = await wrappedToken.DEFAULT_ADMIN_ROLE();
     const PAYOUT_ADMIN_ROLE = await wrappedToken.PAYOUT_ADMIN_ROLE();
-    await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
+    
+    const hasAdminRole = await wrappedToken.hasRole(DEFAULT_ADMIN_ROLE, deployer.address);
+    console.log(`🔍 Deployer has DEFAULT_ADMIN_ROLE: ${hasAdminRole}`);
+    
+    if (!hasAdminRole) {
+      console.log("❌ Deployer doesn't have admin role, this might be the issue");
+      // The wrapped token constructor should grant DEFAULT_ADMIN_ROLE to msg.sender (deployer)
+      // Let's check who has the admin role
+      const adminRoleMembers = await wrappedToken.getRoleMemberCount ? 
+        await wrappedToken.getRoleMemberCount(DEFAULT_ADMIN_ROLE) : "unknown";
+      console.log(`🔍 Admin role member count: ${adminRoleMembers}`);
+    }
+    
+    // Grant payout admin role to payoutAdmin
+    console.log(`🔑 Granting PAYOUT_ADMIN_ROLE to ${payoutAdmin.address}...`);
+    try {
+      await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
+      console.log("✅ Payout admin role granted successfully");
+    } catch (error) {
+      console.log(`❌ Failed to grant payout admin role: ${error.message}`);
+      throw error;
+    }
+    
+    // Verify the role was granted
+    const hasPayoutRole = await wrappedToken.hasRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
+    console.log(`🔍 Payout admin has PAYOUT_ADMIN_ROLE: ${hasPayoutRole}`);
     
     // Transfer sale tokens to offering for distribution
     const totalTokensForSale = parseUnits("200000"); // 200k tokens for sale
