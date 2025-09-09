@@ -77,8 +77,15 @@ type WrappedToken @entity {
   emergencyUnlockPenalty: BigInt!
   createdAt: BigInt!
   createdBlock: BigInt!
+  # Derived relationships for ALL events
   investors: [WrappedTokenInvestor!]! @derivedFrom(field: "wrappedToken")
   payoutRounds: [PayoutRound!]! @derivedFrom(field: "wrappedToken")
+  payoutClaims: [PayoutClaim!]! @derivedFrom(field: "wrappedToken")
+  emergencyUnlocks: [EmergencyUnlock!]! @derivedFrom(field: "wrappedToken")
+  finalTokenClaims: [FinalTokenClaim!]! @derivedFrom(field: "wrappedToken")
+  transfers: [WrappedTokenTransfer!]! @derivedFrom(field: "wrappedToken")
+  roleChanges: [RoleChange!]! @derivedFrom(field: "wrappedToken")
+  pauseEvents: [PauseEvent!]! @derivedFrom(field: "wrappedToken")
 }
 
 type WrappedTokenInvestor @entity {
@@ -172,6 +179,53 @@ type GlobalStats @entity {
   totalEmergencyUnlocks: BigInt!
   totalFinalClaims: BigInt!
   lastUpdated: BigInt!
+}
+
+# Additional Wrapped Token Events
+type WrappedTokenTransfer @entity(immutable: true) {
+  id: Bytes! # transactionHash-logIndex
+  wrappedToken: WrappedToken!
+  from: Bytes!
+  to: Bytes!
+  value: BigInt!
+  transferType: String! # "mint", "burn", "transfer"
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RoleChange @entity(immutable: true) {
+  id: Bytes! # transactionHash-logIndex
+  wrappedToken: WrappedToken!
+  role: Bytes!
+  account: Bytes!
+  sender: Bytes!
+  action: String! # "granted" or "revoked"
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type PauseEvent @entity(immutable: true) {
+  id: Bytes! # transactionHash-logIndex
+  wrappedToken: WrappedToken!
+  action: String! # "paused" or "unpaused"
+  account: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# Investment Registration Events (from wrapped token perspective)
+type WrappedTokenInvestmentRegistration @entity(immutable: true) {
+  id: Bytes! # transactionHash-logIndex
+  wrappedToken: WrappedToken!
+  user: Bytes!
+  amount: BigInt!
+  payoutFrequency: Int!
+  registeredAt: BigInt!
+  registeredBlock: BigInt!
+  transactionHash: Bytes!
 }
 
 # Factory Events

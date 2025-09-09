@@ -145,4 +145,12 @@ templates:
           handler: handleEmergencyUnlockUsed
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+        - event: Paused(address)
+          handler: handlePaused
+        - event: Unpaused(address)
+          handler: handleUnpaused
       file: ./src/wrapped-token.ts

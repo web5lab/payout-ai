@@ -5,7 +5,11 @@ import {
   FinalTokensClaimed as FinalTokensClaimedEvent,
   EmergencyUnlockEnabled as EmergencyUnlockEnabledEvent,
   EmergencyUnlockUsed as EmergencyUnlockUsedEvent,
-  Transfer as TransferEvent
+  Transfer as TransferEvent,
+  RoleGranted as RoleGrantedEvent,
+  RoleRevoked as RoleRevokedEvent,
+  Paused as PausedEvent,
+  Unpaused as UnpausedEvent
 } from "../generated/templates/WRAPEDTOKEN/WRAPEDTOKEN"
 import { 
   WrappedToken,
@@ -16,7 +20,11 @@ import {
   EmergencyUnlock,
   FinalTokenClaim,
   GlobalStats,
-  TotalInvestment
+  TotalInvestment,
+  WrappedTokenTransfer,
+  RoleChange,
+  PauseEvent,
+  WrappedTokenInvestmentRegistration
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 
@@ -75,7 +83,6 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   payoutClaim.save()
 
   // Update or create user payout summary
-  let summaryId = event.address.toHexString() + "-" + event.params.user.toHexString()
   let summary = UserPayoutSummary.load(Bytes.fromUTF8(summaryId))
   if (!summary) {
     summary = new UserPayoutSummary(Bytes.fromUTF8(summaryId))
@@ -113,8 +120,41 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
 }
 
 export function handleIndividualPayoutClaimed(event: IndividualPayoutClaimedEvent): void {
-  // Similar to handlePayoutClaimed but for individual claims
-  handlePayoutClaimed(event as PayoutClaimedEvent)
+  // Create individual payout claim record
+  let payoutClaim = new PayoutClaim(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  payoutClaim.wrappedToken = event.address
+  payoutClaim.user = event.params.user
+  payoutClaim.amount = event.params.amount
+  payoutClaim.remainingBalance = BigInt.fromI32(0) // Individual claims don't have remaining balance info
+  payoutClaim.claimedAt = event.block.timestamp
+  payoutClaim.claimedBlock = event.block.number
+  payoutClaim.transactionHash = event.transaction.hash
+  
+  // Set reference to user summary
+  let summaryId = event.address.toHexString() + "-" + event.params.user.toHexString()
+  payoutClaim.userSummary = Bytes.fromUTF8(summaryId)
+  
+  payoutClaim.save()
+
+  // Update user summary (similar to handlePayoutClaimed)
+  let summary = UserPayoutSummary.load(Bytes.fromUTF8(summaryId))
+  if (!summary) {
+    summary = new UserPayoutSummary(Bytes.fromUTF8(summaryId))
+    summary.wrappedToken = event.address
+    summary.userAddress = event.params.user
+    summary.totalClaimedAmount = BigInt.fromI32(0)
+    summary.totalAvailableAmount = BigInt.fromI32(0)
+    summary.currentClaimableAmount = BigInt.fromI32(0)
+    summary.lastClaimTimestamp = BigInt.fromI32(0)
+    summary.claimCount = BigInt.fromI32(0)
+  }
+
+  summary.totalClaimedAmount = summary.totalClaimedAmount.plus(event.params.amount)
+  summary.lastClaimTimestamp = event.block.timestamp
+  summary.claimCount = summary.claimCount.plus(BigInt.fromI32(1))
+  summary.save()
 }
 
 export function handleFinalTokensClaimed(event: FinalTokensClaimedEvent): void {
@@ -214,9 +254,23 @@ export function handleTransfer(event: TransferEvent): void {
   let wrappedToken = WrappedToken.load(event.address)
   if (!wrappedToken) return
 
-  // Handle minting (from zero address)
+  // Create transfer record
+  let transfer = new WrappedTokenTransfer(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  transfer.wrappedToken = event.address
+  transfer.from = event.params.from
+  transfer.to = event.params.to
+  transfer.value = event.params.value
+  transfer.blockNumber = event.block.number
+  transfer.blockTimestamp = event.block.timestamp
+  transfer.transactionHash = event.transaction.hash
+
+  // Determine transfer type
   if (event.params.from.equals(Address.zero())) {
-    // Create or update investor record
+    transfer.transferType = "mint"
+    
+    // Handle minting - create or update investor record
     let investorId = event.address.toHexString() + "-" + event.params.to.toHexString()
     let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
     
@@ -242,11 +296,24 @@ export function handleTransfer(event: TransferEvent): void {
     // Update wrapped token total supply
     wrappedToken.totalSupply = wrappedToken.totalSupply.plus(event.params.value)
     wrappedToken.save()
-  }
 
-  // Handle burning (to zero address)
-  if (event.params.to.equals(Address.zero())) {
-    // Update investor record
+    // Create investment registration record
+    let registration = new WrappedTokenInvestmentRegistration(
+      event.transaction.hash.concatI32(event.logIndex.toI32()).concat(Bytes.fromUTF8("-registration"))
+    )
+    registration.wrappedToken = event.address
+    registration.user = event.params.to
+    registration.amount = event.params.value
+    registration.payoutFrequency = 0 // Default, would need to be updated from registerInvestment call
+    registration.registeredAt = event.block.timestamp
+    registration.registeredBlock = event.block.number
+    registration.transactionHash = event.transaction.hash
+    registration.save()
+
+  } else if (event.params.to.equals(Address.zero())) {
+    transfer.transferType = "burn"
+    
+    // Handle burning - update investor record
     let investorId = event.address.toHexString() + "-" + event.params.from.toHexString()
     let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
     
@@ -258,7 +325,69 @@ export function handleTransfer(event: TransferEvent): void {
     // Update wrapped token total supply
     wrappedToken.totalSupply = wrappedToken.totalSupply.minus(event.params.value)
     wrappedToken.save()
+
+  } else {
+    transfer.transferType = "transfer"
+    // Note: Regular transfers are blocked in the contract, but we track them anyway
   }
+
+  transfer.save()
+}
+
+export function handleRoleGranted(event: RoleGrantedEvent): void {
+  let roleChange = new RoleChange(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  roleChange.wrappedToken = event.address
+  roleChange.role = event.params.role
+  roleChange.account = event.params.account
+  roleChange.sender = event.params.sender
+  roleChange.action = "granted"
+  roleChange.blockNumber = event.block.number
+  roleChange.blockTimestamp = event.block.timestamp
+  roleChange.transactionHash = event.transaction.hash
+  roleChange.save()
+}
+
+export function handleRoleRevoked(event: RoleRevokedEvent): void {
+  let roleChange = new RoleChange(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  roleChange.wrappedToken = event.address
+  roleChange.role = event.params.role
+  roleChange.account = event.params.account
+  roleChange.sender = event.params.sender
+  roleChange.action = "revoked"
+  roleChange.blockNumber = event.block.number
+  roleChange.blockTimestamp = event.block.timestamp
+  roleChange.transactionHash = event.transaction.hash
+  roleChange.save()
+}
+
+export function handlePaused(event: PausedEvent): void {
+  let pauseEvent = new PauseEvent(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  pauseEvent.wrappedToken = event.address
+  pauseEvent.action = "paused"
+  pauseEvent.account = event.params.account
+  pauseEvent.blockNumber = event.block.number
+  pauseEvent.blockTimestamp = event.block.timestamp
+  pauseEvent.transactionHash = event.transaction.hash
+  pauseEvent.save()
+}
+
+export function handleUnpaused(event: UnpausedEvent): void {
+  let pauseEvent = new PauseEvent(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  pauseEvent.wrappedToken = event.address
+  pauseEvent.action = "unpaused"
+  pauseEvent.account = event.params.account
+  pauseEvent.blockNumber = event.block.number
+  pauseEvent.blockTimestamp = event.block.timestamp
+  pauseEvent.transactionHash = event.transaction.hash
+  pauseEvent.save()
 }
 
 function getRoundNumber(wrappedTokenAddress: Address, timestamp: BigInt): BigInt {
