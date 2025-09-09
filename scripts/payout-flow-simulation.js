@@ -508,13 +508,10 @@ async function main() {
     const payoutBalance2 = await wrappedToken.getUserPayoutBalance(investor2.address);
     console.log(`📊 Investor 1 claimable: ${formatUnits(payoutBalance1.claimable)} (should be 0)`);
     console.log(`📊 Investor 2 claimable: ${formatUnits(payoutBalance2.claimable)} (should get all)`);
-    console.log(`🔍 Debug - Investor 2 total available: ${formatUnits(payoutBalance2.totalAvailable)}`);
-    console.log(`🔍 Debug - Investor 2 already claimed: ${formatUnits(payoutBalance2.claimed)}`);
 
     // Investor 2 claims second payout
     console.log("🎁 Investor 2 claiming second payout...");
     const beforeClaim2 = await payoutToken.balanceOf(investor2.address);
-    console.log(`📊 Investor 2 balance before claim: ${formatUnits(beforeClaim2)} PAYOUT tokens`);
     await wrappedToken.connect(investor2).claimTotalPayout();
     const afterClaim2 = await payoutToken.balanceOf(investor2.address);
     const payout2Claimed = afterClaim2 - beforeClaim2;

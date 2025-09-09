@@ -284,7 +284,6 @@ contract WRAPEDTOKEN is
     {
         Investor storage user = investors[_user];
         if (user.deposited == 0) return (0, 0, 0);
-        if (user.emergencyUnlocked) return (0, user.totalPayoutBalance, 0);
 
         uint256 userBalance = balanceOf(_user);
         if (userBalance == 0) return (0, 0, 0);
@@ -338,8 +337,8 @@ contract WRAPEDTOKEN is
         // Burn wrapped tokens
         _burn(msg.sender, wrappedBalance);
 
-        // Mark as emergency unlocked
-        user.emergencyUnlocked = true;
+        // Clean up user record completely
+        delete investors[msg.sender];
 
         // Transfer tokens minus penalty
         if (!peggedToken.transfer(msg.sender, amountToReturn))
@@ -357,11 +356,15 @@ contract WRAPEDTOKEN is
         uint256 wrappedBalance = balanceOf(msg.sender);
         _burn(msg.sender, wrappedBalance);
 
-        user.hasClaimedTokens = true;
-        if (!peggedToken.transfer(msg.sender, user.deposited))
+        uint256 depositedAmount = user.deposited;
+        
+        // Clean up user record completely
+        delete investors[msg.sender];
+        
+        if (!peggedToken.transfer(msg.sender, depositedAmount))
             revert TransferFailed();
 
-        emit FinalTokensClaimed(msg.sender, user.deposited);
+        emit FinalTokensClaimed(msg.sender, depositedAmount);
     }
 
     // Emergency pause/unpause
