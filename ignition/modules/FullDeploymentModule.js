@@ -7,16 +7,19 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
   // 1) Deploy MockERC20
   const mockERC20 = m.contract("MockERC20", ["Mock Stablecoin", "MSC"]);
 
-  // 2) Deploy the OfferingFactory contract
-  const factory = m.contract("OfferingFactory");
+  // 2) Deploy the WrappedTokenFactory contract first
+  const wrappedTokenFactory = m.contract("WrappedTokenFactory");
 
-  // 3) Deploy the InvestmentManager contract
+  // 3) Deploy the OfferingFactory contract with WrappedTokenFactory address
+  const factory = m.contract("OfferingFactory", [wrappedTokenFactory]);
+
+  // 4) Deploy the InvestmentManager contract
   const investmentManager = m.contract("InvestmentManager");
 
-  // 4) Deploy the Escrow contract
+  // 5) Deploy the Escrow contract
   const escrow = m.contract("Escrow", [{ owner: deployer }]);
 
-  // 5) Deploy the WrappedToken contract
+  // 6) Deploy the WrappedToken contract for testing
   const wrappedToken = m.contract("WRAPEDTOKEN", [{
     name: "Wrapped Token",
     symbol: "WTOK",
@@ -27,7 +30,5 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
     offeringContract: factory,
   }]);
 
-  // 6) deploy the Payout contract
-
-  return { factory, investmentManager, escrow, wrappedToken, mockERC20 };
+  return { factory, wrappedTokenFactory, investmentManager, escrow, wrappedToken, mockERC20 };
 });

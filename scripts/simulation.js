@@ -59,8 +59,11 @@ async function main() {
   // 2. Deploy Core Infrastructure
   console.log("\n🏗️ Deploying core infrastructure...");
   
+  const WrappedTokenFactory = await ethers.getContractFactory("WrappedTokenFactory");
+  const wrappedTokenFactory = await WrappedTokenFactory.deploy();
+
   const OfferingFactory = await ethers.getContractFactory("OfferingFactory");
-  const offeringFactory = await OfferingFactory.deploy();
+  const offeringFactory = await OfferingFactory.deploy(await wrappedTokenFactory.getAddress());
 
   const InvestmentManager = await ethers.getContractFactory("InvestmentManager");
   const investmentManager = await InvestmentManager.deploy();
@@ -68,6 +71,7 @@ async function main() {
   const Escrow = await ethers.getContractFactory("Escrow");
   const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
 
+  console.log(`✅ WrappedTokenFactory: ${await wrappedTokenFactory.getAddress()}`);
   console.log(`✅ OfferingFactory: ${await offeringFactory.getAddress()}`);
   console.log(`✅ InvestmentManager: ${await investmentManager.getAddress()}`);
   console.log(`✅ Escrow: ${await escrow.getAddress()}`);

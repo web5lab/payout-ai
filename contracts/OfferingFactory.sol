@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "./Offering.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./WrapedToken.sol";
+import "./WrappedTokenFactory.sol";
 
 // Import the WrapedTokenConfig struct
 import {WrapedTokenConfig} from "./WrapedToken.sol";
@@ -62,6 +62,9 @@ contract OfferingFactory is Ownable {
     address public usdtAddress;
     address public usdtOracleAddress;
 
+    // WrappedTokenFactory reference
+    WrappedTokenFactory public wrappedTokenFactory;
+
     event OfferingDeployed(
         uint256 indexed offeringId,
         address indexed creator,
@@ -74,7 +77,22 @@ contract OfferingFactory is Ownable {
         address indexed usdtOracleAddress
     );
 
-    constructor() Ownable(msg.sender) {}
+    event WrappedTokenFactoryUpdated(
+        address indexed oldFactory,
+        address indexed newFactory
+    );
+
+    constructor(address _wrappedTokenFactory) Ownable(msg.sender) {
+        require(_wrappedTokenFactory != address(0), "Invalid factory");
+        wrappedTokenFactory = WrappedTokenFactory(_wrappedTokenFactory);
+    }
+
+    function setWrappedTokenFactory(address _wrappedTokenFactory) external onlyOwner {
+        require(_wrappedTokenFactory != address(0), "Invalid factory");
+        address oldFactory = address(wrappedTokenFactory);
+        wrappedTokenFactory = WrappedTokenFactory(_wrappedTokenFactory);
+        emit WrappedTokenFactoryUpdated(oldFactory, _wrappedTokenFactory);
+    }
 
     function setUSDTConfig(
         address _usdtAddress,
@@ -106,7 +124,7 @@ contract OfferingFactory is Ownable {
                 payoutRate: config.payoutRate,
                 offeringContract: address(offering)
             });
-            wrappedTokenAddress = address(new WRAPEDTOKEN(wrappedConfig));
+            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(wrappedConfig);
         }
         
         InitConfig memory initConfig = InitConfig({
@@ -154,7 +172,7 @@ contract OfferingFactory is Ownable {
                 payoutRate: config.payoutRate,
                 offeringContract: address(offering)
             });
-            wrappedTokenAddress = address(new WRAPEDTOKEN(wrappedConfig));
+            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(wrappedConfig);
         }
         
         InitConfig memory initConfig = InitConfig({
