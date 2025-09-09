@@ -273,7 +273,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         address oracle = tokenOracles[token];
         require(oracle != address(0), "Oracle not set");
 
-        (int224 value, uint32 timestamp) = IApi3ReaderProxy(oracle).read();
+        (int224 value, ) = IApi3ReaderProxy(oracle).read();
         require(value > 0, "Invalid price");
 
         uint8 tokenDecimals = token == address(0)

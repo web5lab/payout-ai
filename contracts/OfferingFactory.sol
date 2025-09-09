@@ -74,14 +74,8 @@ contract OfferingFactory is Ownable {
         address indexed usdtOracleAddress
     );
 
-    // ✅ For OpenZeppelin v5.x
     constructor() Ownable(msg.sender) {}
 
-    /**
-     * @dev Set USDT contract address and oracle address
-     * @param _usdtAddress The USDT token contract address
-     * @param _usdtOracleAddress The API3 oracle address for USDT/USD price feed
-     */
     function setUSDTConfig(
         address _usdtAddress,
         address _usdtOracleAddress
@@ -136,39 +130,18 @@ contract OfferingFactory is Ownable {
         });
         
         offering.initialize(initConfig);
-
         offeringAddress = address(offering);
 
-        offerings[offeringCount] = offeringAddress;
-        offeringOwners[offeringAddress] = msg.sender;
-        offeringsByTokenOwner[config.tokenOwner].push(offeringCount);
-
-        emit OfferingDeployed(
-            offeringCount,
-            msg.sender,
-            offeringAddress,
-            config.tokenOwner
-        );
-        offeringCount++;
+        _storeOffering(offeringAddress, config.tokenOwner);
     }
 
-    /**
-     * @dev Create offering with multiple payment tokens and their oracles
-     * @param config Configuration struct containing all offering parameters
-     * @return offeringAddress Address of the deployed offering contract
-     */
     function createOfferingWithPaymentTokens(CreateOfferingWithTokensConfig memory config) external onlyOwner returns (address offeringAddress) {
-        require(
-            config.paymentTokens.length == config.oracles.length,
-            "Array length mismatch"
-        );
+        require(config.paymentTokens.length == config.oracles.length, "Array length mismatch");
         require(config.paymentTokens.length > 0, "No payment tokens provided");
         require(config.escrowAddress != address(0), "Invalid escrow address");
         require(config.payoutTokenAddress != address(0), "Invalid payout token address");
 
         address wrappedTokenAddress = address(0);
-
-        // Deploy the offering contract
         Offering offering = new Offering();
 
         if (config.apyEnabled) {
@@ -205,53 +178,46 @@ contract OfferingFactory is Ownable {
         });
         
         offering.initialize(initConfig);
-
         offeringAddress = address(offering);
 
-        // Configure all payment tokens and their oracles
-        for (uint256 i = 0; i < config.paymentTokens.length; i++) {
-            // Allow address(0) for native ETH, but ensure a valid oracle is provided for non-native tokens
-            if (config.paymentTokens[i] != address(0)) {
-                require(config.oracles[i] != address(0), "Invalid oracle for ERC20 token");
-                offering.setTokenOracle(config.paymentTokens[i], config.oracles[i]);
-            } else {
-                // For native ETH (address(0)), an oracle is still required by Offering.sol's getUSDValue
-                // The oracle address for native ETH should be a valid mock oracle in the test.
-                require(config.oracles[i] != address(0), "Invalid oracle for native ETH");
-                offering.setTokenOracle(config.paymentTokens[i], config.oracles[i]);
-            }
-            offering.setWhitelistedPaymentToken(config.paymentTokens[i], true);
-        }
+        _configurePaymentTokens(offering, config.paymentTokens, config.oracles);
+        _storeOffering(offeringAddress, config.tokenOwner);
+    }
 
-        // Store offering data
+    function _configurePaymentTokens(
+        Offering offering,
+        address[] memory paymentTokens,
+        address[] memory oracles
+    ) internal {
+        for (uint256 i = 0; i < paymentTokens.length; i++) {
+            if (paymentTokens[i] != address(0)) {
+                require(oracles[i] != address(0), "Invalid oracle for ERC20 token");
+            } else {
+                require(oracles[i] != address(0), "Invalid oracle for native ETH");
+            }
+            offering.setTokenOracle(paymentTokens[i], oracles[i]);
+            offering.setWhitelistedPaymentToken(paymentTokens[i], true);
+        }
+    }
+
+    function _storeOffering(address offeringAddress, address tokenOwner) internal {
         offerings[offeringCount] = offeringAddress;
         offeringOwners[offeringAddress] = msg.sender;
-        offeringsByTokenOwner[config.tokenOwner].push(offeringCount);
+        offeringsByTokenOwner[tokenOwner].push(offeringCount);
 
-        emit OfferingDeployed(
-            offeringCount,
-            msg.sender,
-            offeringAddress,
-            config.tokenOwner
-        );
+        emit OfferingDeployed(offeringCount, msg.sender, offeringAddress, tokenOwner);
         offeringCount++;
     }
 
-    function getOfferingAddress(
-        uint256 offeringId
-    ) external view returns (address) {
+    function getOfferingAddress(uint256 offeringId) external view returns (address) {
         return offerings[offeringId];
     }
 
-    function getOfferingOwner(
-        address offeringAddress
-    ) external view returns (address) {
+    function getOfferingOwner(address offeringAddress) external view returns (address) {
         return offeringOwners[offeringAddress];
     }
 
-    function getOfferingIdsByTokenOwner(
-        address tokenOwner
-    ) external view returns (uint256[] memory) {
+    function getOfferingIdsByTokenOwner(address tokenOwner) external view returns (uint256[] memory) {
         return offeringsByTokenOwner[tokenOwner];
     }
 
@@ -263,16 +229,7 @@ contract OfferingFactory is Ownable {
         return result;
     }
 
-    /**
-     * @dev Get USDT configuration
-     * @return usdtToken USDT contract address
-     * @return usdtOracle USDT oracle address
-     */
-    function getUSDTConfig()
-        external
-        view
-        returns (address usdtToken, address usdtOracle)
-    {
+    function getUSDTConfig() external view returns (address usdtToken, address usdtOracle) {
         return (usdtAddress, usdtOracleAddress);
     }
 }
