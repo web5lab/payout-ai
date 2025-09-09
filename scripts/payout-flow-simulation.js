@@ -106,6 +106,8 @@ async function main() {
       payoutTokenAddress: await payoutToken.getAddress(), // Using separate payout token
       payoutRate: 1000, // 10% APY (in basis points)
       defaultPayoutFrequency: 2, // Yearly
+      payoutPeriodDuration: timestamps.payoutPeriodDuration, // 30 days
+      firstPayoutDate: timestamps.firstPayoutDate,
       paymentTokens: [await paymentToken.getAddress()],
       oracles: [await payOracle.getAddress()]
     };
@@ -191,7 +193,10 @@ async function main() {
     console.log("💰 Admin adding payout funds...");
     const payoutAmount = parseUnits("1000");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payoutAmount);
+    
+    // Fast forward to first payout date
+    await time.increaseTo(config.firstPayoutDate + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payoutAmount);
     console.log(`✅ Payout funds added: ${formatUnits(payoutAmount)} PAYOUT tokens`);
 
     // Check updated payout balance
@@ -201,7 +206,7 @@ async function main() {
     // User claims payout
     console.log("🎁 User claiming payout...");
     const initialPayoutBalance = await payoutToken.balanceOf(investor1.address);
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     const finalPayoutBalance = await payoutToken.balanceOf(investor1.address);
     const claimedAmount = finalPayoutBalance - initialPayoutBalance;
     console.log(`✅ User claimed: ${formatUnits(claimedAmount)} PAYOUT tokens`);
@@ -258,7 +263,10 @@ async function main() {
     console.log("💰 Admin adding payout funds for distribution...");
     const totalPayoutAmount = parseUnits("2000");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), totalPayoutAmount);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(totalPayoutAmount);
+    
+    // Fast forward to first payout date
+    await time.increaseTo(config.firstPayoutDate + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(totalPayoutAmount);
     console.log(`✅ Total payout funds added: ${formatUnits(totalPayoutAmount)} PAYOUT tokens`);
 
     // Check each investor's proportional share
@@ -274,7 +282,7 @@ async function main() {
     for (let i = 0; i < investments.length; i++) {
       const { investor } = investments[i];
       const initialBalance = await payoutToken.balanceOf(investor.address);
-      await wrappedToken.connect(investor).claimTotalPayout();
+      await wrappedToken.connect(investor).claimAvailablePayouts();
       const finalBalance = await payoutToken.balanceOf(investor.address);
       const claimed = finalBalance - initialBalance;
       console.log(`✅ Investor ${i + 1} claimed: ${formatUnits(claimed)} PAYOUT tokens`);
@@ -312,14 +320,17 @@ async function main() {
     console.log("💰 Round 1: Admin adding first payout...");
     const payout1 = parseUnits("500");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout1);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout1);
+    
+    // Fast forward to first payout date
+    await time.increaseTo(config.firstPayoutDate + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout1);
     
     let payoutBalance = await wrappedToken.getUserPayoutBalance(investor1.address);
     console.log(`📊 After Round 1 - Claimable: ${formatUnits(payoutBalance.claimable)}`);
 
     // User claims first payout
     let initialBalance = await payoutToken.balanceOf(investor1.address);
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     let finalBalance = await payoutToken.balanceOf(investor1.address);
     let claimed1 = finalBalance - initialBalance;
     console.log(`✅ Round 1 claimed: ${formatUnits(claimed1)} PAYOUT tokens`);
@@ -328,14 +339,17 @@ async function main() {
     console.log("💰 Round 2: Admin adding second payout...");
     const payout2 = parseUnits("300");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout2);
+    
+    // Fast forward to next payout period (30 days later)
+    await time.increase(config.payoutPeriodDuration + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
     
     payoutBalance = await wrappedToken.getUserPayoutBalance(investor1.address);
     console.log(`📊 After Round 2 - Claimable: ${formatUnits(payoutBalance.claimable)}`);
 
     // User claims second payout
     initialBalance = await payoutToken.balanceOf(investor1.address);
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     finalBalance = await payoutToken.balanceOf(investor1.address);
     let claimed2 = finalBalance - initialBalance;
     console.log(`✅ Round 2 claimed: ${formatUnits(claimed2)} PAYOUT tokens`);
@@ -344,14 +358,17 @@ async function main() {
     console.log("💰 Round 3: Admin adding third payout...");
     const payout3 = parseUnits("700");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout3);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout3);
+    
+    // Fast forward to next payout period (another 30 days)
+    await time.increase(config.payoutPeriodDuration + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout3);
     
     payoutBalance = await wrappedToken.getUserPayoutBalance(investor1.address);
     console.log(`📊 After Round 3 - Claimable: ${formatUnits(payoutBalance.claimable)}`);
 
     // User claims third payout
     initialBalance = await payoutToken.balanceOf(investor1.address);
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     finalBalance = await payoutToken.balanceOf(investor1.address);
     let claimed3 = finalBalance - initialBalance;
     console.log(`✅ Round 3 claimed: ${formatUnits(claimed3)} PAYOUT tokens`);
@@ -391,11 +408,14 @@ async function main() {
     console.log("💰 Admin adding payout funds...");
     const payoutAmount = parseUnits("800");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payoutAmount);
+    
+    // Fast forward to first payout date
+    await time.increaseTo(config.firstPayoutDate + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payoutAmount);
 
     // User claims payout
     console.log("🎁 User claiming payout before emergency unlock...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     const payoutClaimed = await payoutToken.balanceOf(investor1.address);
     console.log(`✅ Payout claimed: ${formatUnits(payoutClaimed)} PAYOUT tokens`);
 
@@ -470,8 +490,11 @@ async function main() {
     await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout1);
 
     // Both investors claim
-    console.log("🎁 Both investors claiming first payout...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    
+    // Fast forward to first payout date
+    await time.increaseTo(config.firstPayoutDate + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout1);
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     await wrappedToken.connect(investor2).claimTotalPayout();
 
     const payout1Claimed1 = await payoutToken.balanceOf(investor1.address);
@@ -493,8 +516,14 @@ async function main() {
     console.log("💰 Admin adding second payout round...");
     const payout2 = parseUnits("500");
     await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout2);
-
+    
+    // Fast forward to next payout period
+    await time.increase(config.payoutPeriodDuration + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
+    // Fast forward to next payout period
+    await time.increase(config.payoutPeriodDuration + 10);
+    await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
+    await wrappedToken.connect(investor2).claimAvailablePayouts();
     // Debug: Check contract balances
     const contractPayoutBalance = await payoutToken.balanceOf(await wrappedToken.getAddress());
     const totalSupplyAfterBurn = await wrappedToken.totalSupply();
@@ -512,7 +541,7 @@ async function main() {
     // Investor 2 claims second payout
     console.log("🎁 Investor 2 claiming second payout...");
     const beforeClaim2 = await payoutToken.balanceOf(investor2.address);
-    await wrappedToken.connect(investor2).claimTotalPayout();
+    await wrappedToken.connect(investor2).claimAvailablePayouts();
     const afterClaim2 = await payoutToken.balanceOf(investor2.address);
     const payout2Claimed = afterClaim2 - beforeClaim2;
     console.log(`✅ Investor 2 claimed additional: ${formatUnits(payout2Claimed)} PAYOUT tokens`);

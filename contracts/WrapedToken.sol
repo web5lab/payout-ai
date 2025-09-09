@@ -16,6 +16,8 @@ struct WrapedTokenConfig {
     uint256 payoutRate;
     address offeringContract;
     address admin;
+    uint256 payoutPeriodDuration; // Duration in seconds (e.g., 30 days, 1 year)
+    uint256 firstPayoutDate; // When first payout becomes available
 }
 
 contract WRAPEDTOKEN is
@@ -38,12 +40,20 @@ contract WRAPEDTOKEN is
     IERC20 public immutable payoutToken; // Token used for payouts
     uint256 public immutable maturityDate;
     uint256 public immutable payoutRate; // Payout rate as a percentage (e.g., 100 for 1%)
+    uint256 public immutable payoutPeriodDuration; // Duration between payouts in seconds
+    uint256 public immutable firstPayoutDate; // When first payout becomes available
     uint256 public totalEscrowed;
     address public immutable offeringContract;
 
     // Emergency unlock settings
     bool public emergencyUnlockEnabled;
     uint256 public emergencyUnlockPenalty; // Penalty percentage (e.g., 1000 = 10%)
+    
+    // Payout period tracking
+    uint256 public currentPayoutPeriod; // Current payout period number
+    uint256 public lastPayoutDistributionTime; // Last time admin distributed payouts
+    mapping(uint256 => uint256) public payoutFundsPerPeriod; // period => amount added
+    mapping(address => uint256) public userLastClaimedPeriod; // user => last claimed period
 
     struct Investor {
         uint256 deposited;
@@ -54,6 +64,7 @@ contract WRAPEDTOKEN is
         uint256 payoutAmountPerPeriod; // Amount to be paid out per period
         uint256 totalPayoutBalance; // Total payout balance available to claim
         bool emergencyUnlocked; // Track if user used emergency unlock
+        uint256 lastClaimedPeriod; // Last period user claimed payout
     }
 
     mapping(address => Investor) public investors;
@@ -75,6 +86,8 @@ contract WRAPEDTOKEN is
     error InvalidPenalty();
     error InvalidStablecoin();
     error PayoutPeriodNotElapsed();
+    error PayoutNotAvailable();
+    error InvalidPayoutPeriod();
 
     event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
     event PayoutClaimed(
@@ -90,6 +103,8 @@ contract WRAPEDTOKEN is
         uint256 amount,
         uint256 penalty
     );
+    event PayoutPeriodStarted(uint256 indexed period, uint256 startTime);
+    event PayoutDistributed(uint256 indexed period, uint256 amount, uint256 totalFunds);
 
     constructor(
         WrapedTokenConfig memory config
@@ -101,11 +116,17 @@ contract WRAPEDTOKEN is
         payoutToken = IERC20(config.payoutToken);
         maturityDate = config.maturityDate;
         payoutRate = config.payoutRate;
+        payoutPeriodDuration = config.payoutPeriodDuration;
+        firstPayoutDate = config.firstPayoutDate;
         offeringContract = config.offeringContract;
 
         // Grant roles to the deployer (WrappedTokenFactory)
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAYOUT_ADMIN_ROLE, msg.sender);
+        
+        // Initialize payout period tracking
+        currentPayoutPeriod = 0;
+        lastPayoutDistributionTime = 0;
 
         // Also grant DEFAULT_ADMIN_ROLE to the offering contract's deployer
         // This is needed because the factory deploys the token, but we need the original deployer to have admin rights
@@ -162,7 +183,8 @@ contract WRAPEDTOKEN is
             payoutFrequency: _payoutFrequency,
             payoutAmountPerPeriod: payoutPerPeriod,
             totalPayoutBalance: 0, // Will be updated when admin adds payout funds
-            emergencyUnlocked: false
+            emergencyUnlocked: false,
+            lastClaimedPeriod: 0
         });
 
         totalEscrowed += amount;
@@ -201,10 +223,19 @@ contract WRAPEDTOKEN is
     }
 
     // Admin adds payout funds and distributes to all investors proportionally
-    function addPayoutFunds(
+    function distributePayoutForPeriod(
         uint256 _amount
     ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
         if (_amount == 0) revert InvalidAmt();
+        
+        // Check if we can start a new payout period
+        uint256 nextPayoutTime = getNextPayoutTime();
+        if (block.timestamp < nextPayoutTime) revert PayoutNotAvailable();
+        
+        // Start new payout period
+        currentPayoutPeriod += 1;
+        lastPayoutDistributionTime = block.timestamp;
+        payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
 
         // Transfer payout tokens to this contract
         if (!payoutToken.transferFrom(msg.sender, address(this), _amount))
@@ -212,22 +243,58 @@ contract WRAPEDTOKEN is
 
         totalPayoutFunds += _amount;
 
-        // Distribute proportionally to all investors based on their wrapped token balance
-        uint256 totalSupply = totalSupply();
-        if (totalSupply > 0) {
-            // Update each investor's payout balance proportionally
-            // Note: In practice, you might want to iterate through a list of investors
-            // For now, the balance is updated when users claim
-        }
-
-        emit PayoutFundsAdded(_amount, totalPayoutFunds);
+        emit PayoutPeriodStarted(currentPayoutPeriod, block.timestamp);
+        emit PayoutDistributed(currentPayoutPeriod, _amount, totalPayoutFunds);
     }
 
     // User claims their full available payout balance
-    function claimTotalPayout() external nonReentrant {
+    function claimAvailablePayouts() external nonReentrant {
         Investor storage user = investors[msg.sender];
         if (user.deposited == 0) revert NoDeposit();
         if (user.emergencyUnlocked) revert Claimed();
+        
+        uint256 userBalance = balanceOf(msg.sender);
+        if (userBalance == 0) revert NoDeposit();
+        
+        // Calculate claimable amount from unclaimed periods
+        uint256 totalClaimable = 0;
+        uint256 totalSupply = totalSupply();
+        
+        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
+            uint256 periodFunds = payoutFundsPerPeriod[period];
+            if (periodFunds > 0 && totalSupply > 0) {
+                uint256 userShare = (periodFunds * userBalance) / totalSupply;
+                totalClaimable += userShare;
+            }
+        }
+        
+        if (totalClaimable == 0) revert NoPayout();
+        
+        // Update user's last claimed period
+        user.lastClaimedPeriod = currentPayoutPeriod;
+        user.totalPayoutBalance += totalClaimable;
+        
+        // Ensure we don't try to transfer more than the contract has
+        uint256 contractBalance = payoutToken.balanceOf(address(this));
+        if (totalClaimable > contractBalance) {
+            totalClaimable = contractBalance;
+        }
+        
+        if (!payoutToken.transfer(msg.sender, totalClaimable))
+            revert TransferFailed();
+
+        emit PayoutClaimed(msg.sender, totalClaimable, 0);
+    }
+    
+    // Legacy function for backwards compatibility
+    function claimTotalPayout() external {
+        claimAvailablePayouts();
+    }
+    
+    // Legacy function for backwards compatibility  
+    function addPayoutFunds(uint256 _amount) external {
+        distributePayoutForPeriod(_amount);
+    }
 
         // Calculate user's share of total payout funds
         uint256 userBalance = balanceOf(msg.sender);
@@ -266,14 +333,10 @@ contract WRAPEDTOKEN is
         );
     }
 
-    // Get user's total available payout balance
+    // Get user's payout balance including unclaimed periods
     function getUserPayoutBalance(
         address _user
-    )
-        external
-        view
-        returns (uint256 totalAvailable, uint256 claimed, uint256 claimable)
-    {
+    ) external view returns (uint256 totalAvailable, uint256 claimed, uint256 claimable) {
         Investor storage user = investors[_user];
         if (user.deposited == 0) return (0, 0, 0);
 
@@ -283,9 +346,25 @@ contract WRAPEDTOKEN is
         uint256 totalSupply = totalSupply();
         if (totalSupply == 0) return (0, 0, 0);
 
-        totalAvailable = (totalPayoutFunds * userBalance) / totalSupply;
+        // Calculate total available from all periods
+        totalAvailable = 0;
+        for (uint256 period = 1; period <= currentPayoutPeriod; period++) {
+            uint256 periodFunds = payoutFundsPerPeriod[period];
+            if (periodFunds > 0) {
+                totalAvailable += (periodFunds * userBalance) / totalSupply;
+            }
+        }
+        
+        // Calculate claimable from unclaimed periods
+        claimable = 0;
+        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
+            uint256 periodFunds = payoutFundsPerPeriod[period];
+            if (periodFunds > 0) {
+                claimable += (periodFunds * userBalance) / totalSupply;
+            }
+        }
+        
         claimed = user.totalPayoutBalance;
-        claimable = totalAvailable > claimed ? totalAvailable - claimed : 0;
         
         // Ensure claimable doesn't exceed contract balance
         uint256 contractBalance = payoutToken.balanceOf(address(this));
@@ -337,6 +416,71 @@ contract WRAPEDTOKEN is
             revert TransferFailed();
 
         emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
+    }
+    
+    // Get next available payout time
+    function getNextPayoutTime() public view returns (uint256) {
+        if (lastPayoutDistributionTime == 0) {
+            return firstPayoutDate;
+        }
+        return lastPayoutDistributionTime + payoutPeriodDuration;
+    }
+    
+    // Check if payout period is available
+    function isPayoutPeriodAvailable() external view returns (bool) {
+        return block.timestamp >= getNextPayoutTime();
+    }
+    
+    // Get current payout period info
+    function getCurrentPayoutPeriodInfo() external view returns (
+        uint256 period,
+        uint256 lastDistributionTime,
+        uint256 nextPayoutTime,
+        bool canDistribute
+    ) {
+        period = currentPayoutPeriod;
+        lastDistributionTime = lastPayoutDistributionTime;
+        nextPayoutTime = getNextPayoutTime();
+        canDistribute = block.timestamp >= nextPayoutTime;
+    }
+    
+    // Get user's claimable periods
+    function getUserClaimablePeriods(address _user) external view returns (
+        uint256[] memory periods,
+        uint256[] memory amounts
+    ) {
+        Investor storage user = investors[_user];
+        if (user.deposited == 0) {
+            return (new uint256[](0), new uint256[](0));
+        }
+        
+        uint256 userBalance = balanceOf(_user);
+        uint256 totalSupply = totalSupply();
+        
+        if (userBalance == 0 || totalSupply == 0) {
+            return (new uint256[](0), new uint256[](0));
+        }
+        
+        // Count claimable periods
+        uint256 claimableCount = 0;
+        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
+            if (payoutFundsPerPeriod[period] > 0) {
+                claimableCount++;
+            }
+        }
+        
+        periods = new uint256[](claimableCount);
+        amounts = new uint256[](claimableCount);
+        
+        uint256 index = 0;
+        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
+            uint256 periodFunds = payoutFundsPerPeriod[period];
+            if (periodFunds > 0) {
+                periods[index] = period;
+                amounts[index] = (periodFunds * userBalance) / totalSupply;
+                index++;
+            }
+        }
     }
 
     function claimFinalTokens() external onlyAfterMaturity {

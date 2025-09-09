@@ -25,6 +25,8 @@ struct CreateOfferingConfig {
     address payoutTokenAddress;
     uint256 payoutRate;
     IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
+    uint256 payoutPeriodDuration; // Duration between payouts (e.g., 30 days = 2592000 seconds)
+    uint256 firstPayoutDate; // When first payout becomes available
 }
 
 struct CreateOfferingWithTokensConfig {
@@ -44,6 +46,8 @@ struct CreateOfferingWithTokensConfig {
     address payoutTokenAddress;
     uint256 payoutRate;
     IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
+    uint256 payoutPeriodDuration;
+    uint256 firstPayoutDate;
     address[] paymentTokens;
     address[] oracles;
 }
@@ -130,7 +134,9 @@ contract OfferingFactory is Ownable {
                 maturityDate: config.maturityDate,
                 payoutRate: config.payoutRate,
                 offeringContract: address(offering),
-                admin: msg.sender
+                admin: msg.sender,
+                payoutPeriodDuration: config.payoutPeriodDuration,
+                firstPayoutDate: config.firstPayoutDate
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig
@@ -189,7 +195,9 @@ contract OfferingFactory is Ownable {
                 maturityDate: config.maturityDate,
                 payoutRate: config.payoutRate,
                 offeringContract: address(offering),
-                admin: msg.sender
+                admin: msg.sender,
+                payoutPeriodDuration: config.payoutPeriodDuration,
+                firstPayoutDate: config.firstPayoutDate
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig

@@ -156,6 +156,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         payoutTokenAddress = config.payoutTokenAddress;
         payoutRate = config.payoutRate;
         defaultPayoutFrequency = config.defaultPayoutFrequency;
+        payoutPeriodDuration = config.payoutPeriodDuration;
+        firstPayoutDate = config.firstPayoutDate;
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(TOKEN_OWNER_ROLE, config.tokenOwner);

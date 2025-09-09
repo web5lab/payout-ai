@@ -200,7 +200,7 @@ async function main() {
 
     // User claims total payout
     console.log("🎁 User claiming total payout...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
+    await wrappedToken.connect(investor1).claimAvailablePayouts();
     
     const userPaymentBalance = await paymentToken.balanceOf(investor1.address);
     console.log(`✅ User claimed payout: ${formatUnits(userPaymentBalance)} PAY tokens`);
