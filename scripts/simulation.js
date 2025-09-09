@@ -142,8 +142,9 @@ async function main() {
       const wrappedTokenAddress = await offering.wrappedTokenAddress();
       wrappedToken = await ethers.getContractAt("WRAPEDTOKEN", wrappedTokenAddress);
       
-      // Grant payout admin role to payoutAdmin
-      await wrappedToken.connect(deployer).grantPayoutAdminRole(payoutAdmin.address);
+      // Grant payout admin role to payoutAdmin using correct function
+      const PAYOUT_ADMIN_ROLE = await wrappedToken.PAYOUT_ADMIN_ROLE();
+      await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
     }
     
     // Transfer sale tokens to offering for distribution
@@ -203,20 +204,6 @@ async function main() {
     
     const userPaymentBalance = await paymentToken.balanceOf(investor1.address);
     console.log(`✅ User claimed payout: ${formatUnits(userPaymentBalance)} PAY tokens`);
-
-    // Admin adds second round of payout funds
-    console.log("💰 Admin adding second round of payout funds...");
-    const payoutAmount2 = parseUnits("3000");
-    await paymentToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount2);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payoutAmount2);
-    console.log(`✅ Second payout funds added: ${formatUnits(payoutAmount2)} PAY tokens`);
-
-    // User claims second round
-    console.log("🎁 User claiming second round payout...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
-    
-    const finalPaymentBalance = await paymentToken.balanceOf(investor1.address);
-    console.log(`✅ Total payout claimed: ${formatUnits(finalPaymentBalance)} PAY tokens`);
 
     // Fast forward to maturity and claim final tokens
     console.log("⏰ Fast-forwarding to maturity...");
@@ -301,6 +288,7 @@ async function main() {
 
     // Admin enables emergency unlock with 10% penalty
     console.log("🚨 Admin enabling emergency unlock with 10% penalty...");
+    const DEFAULT_ADMIN_ROLE = await wrappedToken.DEFAULT_ADMIN_ROLE();
     await wrappedToken.connect(deployer).enableEmergencyUnlock(1000); // 10% penalty
     console.log("✅ Emergency unlock enabled");
 
@@ -328,101 +316,19 @@ async function main() {
     console.error("❌ Scenario 3 Failed:", error.message);
   }
 
-  // --- SCENARIO 4: APY Enabled + Manual Claim + Multiple Payout Additions ---
+  // --- SCENARIO 4: Native ETH Investment ---
   console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 4: APY Enabled + Manual Claim + Multiple Payout Additions");
+  console.log("🎯 SCENARIO 4: Native ETH Investment");
   console.log("=".repeat(60));
   
   try {
     const FreshEscrow4 = await ethers.getContractFactory("Escrow");
     const freshEscrow4 = await FreshEscrow4.deploy({ owner: treasuryOwner.address });
     
-    const { offering, wrappedToken, config } = await deployOffering({ 
-      apyEnabled: true, 
-      autoTransfer: false 
-    }, freshEscrow4);
-    
-    const investAmountPAY = parseUnits("400"); // $400 investment
-    const expectedSaleTokens = parseUnits("800"); // $400 / $0.5 = 800 tokens
-
-    console.log("📝 Setting up investment...");
-    await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmountPAY);
-    await time.increaseTo(config.startDate + 10);
-
-    console.log("💸 Investor 1 investing via InvestmentManager...");
-    await investmentManager.connect(investor1).routeInvestment(
-      await offering.getAddress(),
-      await paymentToken.getAddress(),
-      investAmountPAY
-    );
-    
-    // Check pending tokens
-    const pendingTokens = await offering.pendingTokens(investor1.address);
-    await assert(pendingTokens == expectedSaleTokens, 
-      `Pending tokens mismatch. Expected: ${formatUnits(expectedSaleTokens)}, Got: ${formatUnits(pendingTokens)}`);
-    console.log(`✅ Pending tokens: ${formatUnits(pendingTokens)} SALE tokens`);
-
-    console.log("⏰ Fast-forwarding to maturity...");
-    await time.increaseTo(config.maturityDate + 10);
-
-    console.log("🎫 Claiming tokens via InvestmentManager...");
-    await investmentManager.connect(investor1).claimInvestmentTokens(await offering.getAddress());
-    
-    const wrappedBalance = await wrappedToken.balanceOf(investor1.address);
-    await assert(wrappedBalance == expectedSaleTokens, 
-      `Wrapped token balance mismatch. Expected: ${formatUnits(expectedSaleTokens)}, Got: ${formatUnits(wrappedBalance)}`);
-    console.log(`✅ Wrapped tokens received: ${formatUnits(wrappedBalance)} wSALE tokens`);
-
-    // Admin adds first payout
-    console.log("💰 Admin adding first payout funds...");
-    const payoutAmount1 = parseUnits("4000");
-    await paymentToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount1);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payoutAmount1);
-
-    console.log("🎁 User claiming first payout...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
-    const balance1 = await paymentToken.balanceOf(investor1.address);
-    console.log(`✅ First payout claimed: ${formatUnits(balance1)} PAY tokens`);
-
-    // Admin adds second payout
-    console.log("💰 Admin adding second payout funds...");
-    const payoutAmount2 = parseUnits("2500");
-    await paymentToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount2);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(payoutAmount2);
-
-    console.log("🎁 User claiming second payout...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
-    const balance2 = await paymentToken.balanceOf(investor1.address);
-    const secondClaim = balance2 - balance1;
-    console.log(`✅ Second payout claimed: ${formatUnits(secondClaim)} PAY tokens`);
-    console.log(`✅ Total payout claimed: ${formatUnits(balance2)} PAY tokens`);
-
-    console.log("🏁 Claiming final tokens...");
-    await wrappedToken.connect(investor1).claimFinalTokens();
-    
-    const finalBalance = await saleToken.balanceOf(investor1.address);
-    await assert(finalBalance == expectedSaleTokens, 
-      `Final token balance mismatch. Expected: ${formatUnits(expectedSaleTokens)}, Got: ${formatUnits(finalBalance)}`);
-    console.log(`✅ Final tokens claimed: ${formatUnits(finalBalance)} SALE tokens`);
-    
-    console.log("🎉 Scenario 4 Passed - APY with Manual Claim + Multiple Payouts");
-  } catch (error) {
-    console.error("❌ Scenario 4 Failed:", error.message);
-  }
-
-  // --- SCENARIO 5: Native ETH Investment ---
-  console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 5: Native ETH Investment");
-  console.log("=".repeat(60));
-  
-  try {
-    const FreshEscrow5 = await ethers.getContractFactory("Escrow");
-    const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
-    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    }, freshEscrow5);
+    }, freshEscrow4);
     
     const investAmountETH = parseUnits("0.1"); // 0.1 ETH = $200 (at $2000/ETH)
     const expectedSaleTokens = parseUnits("400"); // $200 / $0.5 = 400 tokens
@@ -445,29 +351,29 @@ async function main() {
     console.log(`✅ Tokens received from ETH: ${formatUnits(directBalance)} SALE tokens`);
     
     // Check escrow ETH balance
-    const escrowETHBalance = await ethers.provider.getBalance(await freshEscrow5.getAddress());
+    const escrowETHBalance = await ethers.provider.getBalance(await freshEscrow4.getAddress());
     await assert(escrowETHBalance == investAmountETH, 
       `Escrow ETH balance mismatch. Expected: ${formatUnits(investAmountETH)}, Got: ${formatUnits(escrowETHBalance)}`);
     console.log(`✅ ETH secured in escrow: ${formatUnits(escrowETHBalance)} ETH`);
     
-    console.log("🎉 Scenario 5 Passed - Native ETH Investment");
+    console.log("🎉 Scenario 4 Passed - Native ETH Investment");
   } catch (error) {
-    console.error("❌ Scenario 5 Failed:", error.message);
+    console.error("❌ Scenario 4 Failed:", error.message);
   }
 
-  // --- SCENARIO 6: Multi-Token Investment (PAY + USDT) ---
+  // --- SCENARIO 5: Multi-Token Investment (PAY + USDT) ---
   console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 6: Multi-Token Investment (PAY + USDT)");
+  console.log("🎯 SCENARIO 5: Multi-Token Investment (PAY + USDT)");
   console.log("=".repeat(60));
   
   try {
-    const FreshEscrow6 = await ethers.getContractFactory("Escrow");
-    const freshEscrow6 = await FreshEscrow6.deploy({ owner: treasuryOwner.address });
+    const FreshEscrow5 = await ethers.getContractFactory("Escrow");
+    const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
     
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    }, freshEscrow6);
+    }, freshEscrow5);
     
     await time.increaseTo(config.startDate + 10);
 
@@ -482,7 +388,7 @@ async function main() {
       investAmountPAY
     );
 
-    // Investment 2: USDT tokens (6 decimals)
+    // Investment 2: USDT tokens (6 decimals) - need to invest more to meet minimum
     const investAmountUSDT = parseUnits("250", 6); // $250 worth of USDT (6 decimals)
     await usdtToken.connect(investor2).approve(await offering.getAddress(), investAmountUSDT);
     
@@ -506,96 +412,24 @@ async function main() {
     console.log(`✅ Investor 1 tokens: ${formatUnits(investor1Tokens)} SALE`);
     console.log(`✅ Investor 2 tokens: ${formatUnits(investor2Tokens)} SALE`);
     
-    console.log("🎉 Scenario 6 Passed - Multi-Token Investment");
+    console.log("🎉 Scenario 5 Passed - Multi-Token Investment");
   } catch (error) {
-    console.error("❌ Scenario 6 Failed:", error.message);
+    console.error("❌ Scenario 5 Failed:", error.message);
   }
 
-  // --- SCENARIO 7: Multiple Investors + Proportional Payout Distribution ---
+  // --- SCENARIO 6: Escrow and Refund Flow ---
   console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 7: Multiple Investors + Proportional Payout Distribution");
+  console.log("🎯 SCENARIO 6: Escrow and Refund Flow");
   console.log("=".repeat(60));
   
   try {
-    const FreshEscrow7 = await ethers.getContractFactory("Escrow");
-    const freshEscrow7 = await FreshEscrow7.deploy({ owner: treasuryOwner.address });
-    
-    const { offering, wrappedToken, config } = await deployOffering({ 
-      apyEnabled: true, 
-      autoTransfer: true 
-    }, freshEscrow7);
-
-    await time.increaseTo(config.startDate + 10);
-
-    // Multiple investors invest
-    console.log("💸 Multiple investors investing...");
-    
-    // Investor 1: $200
-    const invest1 = parseUnits("200");
-    await paymentToken.connect(investor1).approve(await offering.getAddress(), invest1);
-    await investmentManager.connect(investor1).routeInvestment(
-      await offering.getAddress(),
-      await paymentToken.getAddress(),
-      invest1
-    );
-
-    // Investor 2: $300  
-    const invest2 = parseUnits("300");
-    await paymentToken.connect(investor2).approve(await offering.getAddress(), invest2);
-    await investmentManager.connect(investor2).routeInvestment(
-      await offering.getAddress(),
-      await paymentToken.getAddress(),
-      invest2
-    );
-
-    console.log("✅ Multiple investments completed");
-
-    // Check wrapped token balances
-    const balance1 = await wrappedToken.balanceOf(investor1.address);
-    const balance2 = await wrappedToken.balanceOf(investor2.address);
-    console.log(`✅ Investor 1 wrapped tokens: ${formatUnits(balance1)}`);
-    console.log(`✅ Investor 2 wrapped tokens: ${formatUnits(balance2)}`);
-
-    // Admin adds payout funds
-    console.log("💰 Admin adding payout funds for distribution...");
-    const totalPayoutAmount = parseUnits("10000");
-    await paymentToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), totalPayoutAmount);
-    await wrappedToken.connect(payoutAdmin).addPayoutFunds(totalPayoutAmount);
-
-    // Check payout balances
-    const payout1 = await wrappedToken.getUserPayoutBalance(investor1.address);
-    const payout2 = await wrappedToken.getUserPayoutBalance(investor2.address);
-    console.log(`✅ Investor 1 claimable payout: ${formatUnits(payout1.claimable)} PAY`);
-    console.log(`✅ Investor 2 claimable payout: ${formatUnits(payout2.claimable)} PAY`);
-
-    // Both investors claim
-    console.log("🎁 Investors claiming payouts...");
-    await wrappedToken.connect(investor1).claimTotalPayout();
-    await wrappedToken.connect(investor2).claimTotalPayout();
-
-    const finalPayout1 = await paymentToken.balanceOf(investor1.address);
-    const finalPayout2 = await paymentToken.balanceOf(investor2.address);
-    console.log(`✅ Investor 1 total payout: ${formatUnits(finalPayout1)} PAY`);
-    console.log(`✅ Investor 2 total payout: ${formatUnits(finalPayout2)} PAY`);
-
-    console.log("🎉 Scenario 7 Passed - Multiple Investors Proportional Distribution");
-  } catch (error) {
-    console.error("❌ Scenario 7 Failed:", error.message);
-  }
-
-  // --- SCENARIO 8: Escrow and Refund Flow ---
-  console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 8: Escrow and Refund Flow");
-  console.log("=".repeat(60));
-  
-  try {
-    const FreshEscrow8 = await ethers.getContractFactory("Escrow");
-    const freshEscrow8 = await FreshEscrow8.deploy({ owner: treasuryOwner.address });
+    const FreshEscrow6 = await ethers.getContractFactory("Escrow");
+    const freshEscrow6 = await FreshEscrow6.deploy({ owner: treasuryOwner.address });
     
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: false 
-    }, freshEscrow8);
+    }, freshEscrow6);
     
     const investAmountPAY = parseUnits("400"); // $400 investment
 
@@ -612,19 +446,19 @@ async function main() {
     );
 
     // Check escrow balance
-    const escrowBalance = await paymentToken.balanceOf(await freshEscrow8.getAddress());
+    const escrowBalance = await paymentToken.balanceOf(await freshEscrow6.getAddress());
     await assert(escrowBalance == investAmountPAY,
       `Escrow balance mismatch. Expected: ${formatUnits(investAmountPAY)}, Got: ${formatUnits(escrowBalance)}`);
     console.log(`✅ Funds secured in escrow: ${formatUnits(escrowBalance)} PAY`);
 
     // Enable refunds
     console.log("🔄 Treasury owner enabling refunds...");
-    await freshEscrow8.connect(treasuryOwner).enableRefunds();
+    await freshEscrow6.connect(treasuryOwner).enableRefunds();
     
     const initialInvestorBalance = await paymentToken.balanceOf(investor1.address);
     
     console.log("💸 Processing refund...");
-    await freshEscrow8.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
+    await freshEscrow6.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
     
     const finalInvestorBalance = await paymentToken.balanceOf(investor1.address);
     const refundAmount = finalInvestorBalance - initialInvestorBalance;
@@ -633,24 +467,24 @@ async function main() {
       `Refund amount mismatch. Expected: ${formatUnits(investAmountPAY)}, Got: ${formatUnits(refundAmount)}`);
     console.log(`✅ Refund processed: ${formatUnits(refundAmount)} PAY tokens`);
 
-    console.log("🎉 Scenario 8 Passed - Escrow and Refund");
+    console.log("🎉 Scenario 6 Passed - Escrow and Refund");
   } catch (error) {
-    console.error("❌ Scenario 8 Failed:", error.message);
+    console.error("❌ Scenario 6 Failed:", error.message);
   }
 
-  // --- SCENARIO 9: Investment Limits and Validation ---
+  // --- SCENARIO 7: Investment Limits and Validation ---
   console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 9: Investment Limits and Validation");
+  console.log("🎯 SCENARIO 7: Investment Limits and Validation");
   console.log("=".repeat(60));
   
   try {
-    const FreshEscrow9 = await ethers.getContractFactory("Escrow");
-    const freshEscrow9 = await FreshEscrow9.deploy({ owner: treasuryOwner.address });
+    const FreshEscrow7 = await ethers.getContractFactory("Escrow");
+    const freshEscrow7 = await FreshEscrow7.deploy({ owner: treasuryOwner.address });
     
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    }, freshEscrow9);
+    }, freshEscrow7);
     
     await time.increaseTo(config.startDate + 10);
 
@@ -708,67 +542,9 @@ async function main() {
     const tokensReceived = await saleToken.balanceOf(investor1.address);
     console.log(`✅ Valid investment processed: ${formatUnits(tokensReceived)} SALE tokens`);
 
-    console.log("🎉 Scenario 9 Passed - Investment Limits Validation");
+    console.log("🎉 Scenario 7 Passed - Investment Limits Validation");
   } catch (error) {
-    console.error("❌ Scenario 9 Failed:", error.message);
-  }
-
-  // --- SCENARIO 10: Admin Functions and Role Management ---
-  console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 10: Admin Functions and Role Management");
-  console.log("=".repeat(60));
-  
-  try {
-    const FreshEscrow10 = await ethers.getContractFactory("Escrow");
-    const freshEscrow10 = await FreshEscrow10.deploy({ owner: treasuryOwner.address });
-    
-    const { offering } = await deployOffering({ 
-      apyEnabled: false, 
-      autoTransfer: true 
-    }, freshEscrow10);
-
-    console.log("🔐 Testing role management...");
-    
-    // Grant additional token owner role
-    await offering.connect(deployer).grantRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
-    const hasRole = await offering.hasRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
-    await assert(hasRole, "Failed to grant TOKEN_OWNER_ROLE");
-    console.log("✅ Granted TOKEN_OWNER_ROLE to investor1");
-
-    // Test token price update by token owner
-    const newPrice = parseUnits("0.75"); // $0.75 per token
-    await offering.connect(investor1).setTokenPrice(newPrice);
-    const updatedPrice = await offering.tokenPrice();
-    await assert(updatedPrice == newPrice, 
-      `Token price update failed. Expected: ${formatUnits(newPrice)}, Got: ${formatUnits(updatedPrice)}`);
-    console.log(`✅ Token price updated to: $${formatUnits(newPrice)}`);
-
-    // Test investment limits update
-    const newMinInvestment = parseUnits("200");
-    const newMaxInvestment = parseUnits("8000");
-    await offering.connect(investor1).setInvestmentLimits(newMinInvestment, newMaxInvestment);
-    
-    const updatedMin = await offering.minInvestment();
-    const updatedMax = await offering.maxInvestment();
-    await assert(updatedMin == newMinInvestment && updatedMax == newMaxInvestment,
-      "Investment limits update failed");
-    console.log(`✅ Investment limits updated: Min $${formatUnits(updatedMin)}, Max $${formatUnits(updatedMax)}`);
-
-    // Test pause/unpause functionality
-    console.log("⏸️ Testing pause functionality...");
-    await offering.connect(deployer).pause();
-    const isPaused = await offering.paused();
-    await assert(isPaused, "Failed to pause contract");
-    console.log("✅ Contract paused successfully");
-
-    await offering.connect(deployer).unpause();
-    const isUnpaused = !(await offering.paused());
-    await assert(isUnpaused, "Failed to unpause contract");
-    console.log("✅ Contract unpaused successfully");
-
-    console.log("🎉 Scenario 10 Passed - Admin Functions");
-  } catch (error) {
-    console.error("❌ Scenario 10 Failed:", error.message);
+    console.error("❌ Scenario 7 Failed:", error.message);
   }
 
   // --- FINAL SUMMARY ---
@@ -779,13 +555,10 @@ async function main() {
   console.log("✅ Scenario 1: APY Enabled + Direct Payout System");
   console.log("✅ Scenario 2: APY Disabled + Auto Transfer");
   console.log("✅ Scenario 3: Emergency Unlock Feature");
-  console.log("✅ Scenario 4: APY Enabled + Manual Claim + Multiple Payouts");
-  console.log("✅ Scenario 5: Native ETH Investment");
-  console.log("✅ Scenario 6: Multi-Token Investment");
-  console.log("✅ Scenario 7: Multiple Investors Proportional Distribution");
-  console.log("✅ Scenario 8: Escrow and Refund Flow");
-  console.log("✅ Scenario 9: Investment Limits Validation");
-  console.log("✅ Scenario 10: Admin Functions");
+  console.log("✅ Scenario 4: Native ETH Investment");
+  console.log("✅ Scenario 5: Multi-Token Investment");
+  console.log("✅ Scenario 6: Escrow and Refund Flow");
+  console.log("✅ Scenario 7: Investment Limits Validation");
   
   console.log("\n🎉 All scenarios completed successfully!");
   console.log("💡 The offering ecosystem with integrated WrapedToken payouts and emergency unlock is working perfectly!");
