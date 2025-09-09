@@ -1,0 +1,161 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  # Investment Manager
+  - kind: ethereum
+    name: InvestmentManager
+    network: hardhat
+    source:
+      address: "0x5FbDB2315678afecb367f032d93F642f64180aa3" # Default Hardhat deployment address
+      abi: InvestmentManager
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - InvestmentRouted
+        - TotalInvestment
+        - TokensClaimed
+        - GlobalStats
+      abis:
+        - name: InvestmentManager
+          file: ./abis/InvestmentManager.json
+      eventHandlers:
+        - event: InvestmentRouted(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleInvestmentRouted
+        - event: TokensClaimed(indexed address,indexed address,uint256)
+          handler: handleTokensClaimed
+      file: ./src/investment-manager.ts
+
+  # Offering Factory
+  - kind: ethereum
+    name: OfferingFactory
+    network: hardhat
+    source:
+      address: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512" # Default Hardhat deployment address
+      abi: OfferingFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - OfferingDeployed
+        - Offering
+        - GlobalStats
+      abis:
+        - name: OfferingFactory
+          file: ./abis/OfferingFactory.json
+        - name: Offering
+          file: ./abis/Offering.json
+      eventHandlers:
+        - event: OfferingDeployed(indexed uint256,indexed address,indexed address,address)
+          handler: handleOfferingDeployed
+      file: ./src/offering-factory.ts
+
+  # Wrapped Token Factory
+  - kind: ethereum
+    name: WrappedTokenFactory
+    network: hardhat
+    source:
+      address: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0" # Default Hardhat deployment address
+      abi: WrappedTokenFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - WrappedTokenDeployed
+        - WrappedToken
+        - GlobalStats
+      abis:
+        - name: WrappedTokenFactory
+          file: ./abis/WrappedTokenFactory.json
+        - name: WRAPEDTOKEN
+          file: ./abis/WRAPEDTOKEN.json
+      eventHandlers:
+        - event: WrappedTokenDeployed(indexed uint256,indexed address,indexed address,address)
+          handler: handleWrappedTokenDeployed
+      file: ./src/wrapped-token-factory.ts
+
+templates:
+  # Dynamic Offering Contract Template
+  - kind: ethereum/contract
+    name: Offering
+    network: hardhat
+    source:
+      abi: Offering
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Offering
+        - InvestmentRouted
+        - TotalInvestment
+      abis:
+        - name: Offering
+          file: ./abis/Offering.json
+      eventHandlers:
+        - event: Invested(indexed address,address,uint256,uint256)
+          handler: handleInvested
+        - event: Claimed(indexed address,uint256)
+          handler: handleClaimed
+        - event: SaleClosed(uint256)
+          handler: handleSaleClosed
+      file: ./src/offering.ts
+
+  # Dynamic Wrapped Token Template
+  - kind: ethereum/contract
+    name: WRAPEDTOKEN
+    network: hardhat
+    source:
+      abi: WRAPEDTOKEN
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - WrappedToken
+        - WrappedTokenInvestor
+        - PayoutRound
+        - PayoutClaim
+        - UserPayoutSummary
+        - EmergencyUnlock
+        - FinalTokenClaim
+        - PayoutPeriod
+        - GlobalStats
+      abis:
+        - name: WRAPEDTOKEN
+          file: ./abis/WRAPEDTOKEN.json
+      eventHandlers:
+        - event: PayoutFundsAdded(uint256,uint256)
+          handler: handlePayoutFundsAdded
+        - event: PayoutPeriodStarted(indexed uint256,uint256)
+          handler: handlePayoutPeriodStarted
+        - event: PayoutDistributed(indexed uint256,uint256,uint256)
+          handler: handlePayoutDistributed
+        - event: PayoutClaimed(indexed address,uint256,uint256)
+          handler: handlePayoutClaimed
+        - event: IndividualPayoutClaimed(indexed address,uint256)
+          handler: handleIndividualPayoutClaimed
+        - event: FinalTokensClaimed(indexed address,uint256)
+          handler: handleFinalTokensClaimed
+        - event: EmergencyUnlockEnabled(uint256)
+          handler: handleEmergencyUnlockEnabled
+        - event: EmergencyUnlockUsed(indexed address,uint256,uint256)
+          handler: handleEmergencyUnlockUsed
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleGranted
+        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleRoleRevoked
+        - event: Paused(address)
+          handler: handlePaused
+        - event: Unpaused(address)
+          handler: handleUnpaused
+      file: ./src/wrapped-token.ts
