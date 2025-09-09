@@ -500,7 +500,7 @@ async function main() {
     console.log("📝 Setting up investment for refund scenario...");
     
     // Get fresh escrow balance before investment
-    const initialEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
+    const initialEscrowBalance = await paymentToken.balanceOf(await freshEscrow.getAddress());
     
     await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmountPAY);
     await time.increaseTo(config.startDate + 10);
@@ -513,7 +513,7 @@ async function main() {
     );
 
     // Check escrow balance
-    const finalEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
+    const finalEscrowBalance = await paymentToken.balanceOf(await freshEscrow.getAddress());
     const escrowIncrease = finalEscrowBalance - initialEscrowBalance;
     await assert(escrowIncrease == investAmountPAY,
       `Escrow balance increase mismatch. Expected: ${formatUnits(investAmountPAY)}, Got: ${formatUnits(escrowIncrease)}`);
@@ -521,12 +521,12 @@ async function main() {
 
     // Enable refunds
     console.log("🔄 Treasury owner enabling refunds...");
-    await escrow.connect(treasuryOwner).enableRefunds();
+    await freshEscrow.connect(treasuryOwner).enableRefunds();
     
     const initialInvestorBalance = await paymentToken.balanceOf(investor1.address);
     
     console.log("💸 Processing refund...");
-    await escrow.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
+    await freshEscrow.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
     
     const finalInvestorBalance = await paymentToken.balanceOf(investor1.address);
     const refundAmount = finalInvestorBalance - initialInvestorBalance;
