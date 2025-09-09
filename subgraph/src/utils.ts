@@ -1,4 +1,5 @@
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
+import { GlobalStats } from "../generated/schema"
 
 export function createId(address: Bytes, suffix: string): Bytes {
   return Bytes.fromUTF8(address.toHexString() + "-" + suffix)
@@ -9,7 +10,7 @@ export function createUserTokenId(tokenAddress: Bytes, userAddress: Bytes): Byte
 }
 
 export function createRoundId(tokenAddress: Bytes, roundNumber: BigInt): Bytes {
-  return tokenAddress.concat(Bytes.fromBigInt(roundNumber))
+  return Bytes.fromUTF8(tokenAddress.toHexString() + "-" + roundNumber.toString())
 }
 
 export function calculatePercentage(part: BigInt, total: BigInt): BigInt {

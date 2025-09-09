@@ -38,9 +38,9 @@ export function handlePayoutFundsAdded(event: PayoutFundsAddedEvent): void {
 
   // Create payout round record
   let roundNumber = getRoundNumber(event.address, event.block.timestamp)
-  let payoutRound = new PayoutRound(
-    event.address.concat(Bytes.fromBigInt(roundNumber))
-  )
+  let roundId = event.address.toHexString() + "-" + roundNumber.toString()
+  let payoutRound = new PayoutRound(Bytes.fromUTF8(roundId))
+  
   payoutRound.wrappedToken = event.address
   payoutRound.roundNumber = roundNumber
   payoutRound.amount = event.params.amount
@@ -65,9 +65,9 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   if (!wrappedToken) return
 
   // Create payout claim record
-  let payoutClaim = new PayoutClaim(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let payoutClaim = new PayoutClaim(Bytes.fromUTF8(claimId))
+  
   payoutClaim.wrappedToken = event.address
   payoutClaim.user = event.params.user
   payoutClaim.amount = event.params.amount
@@ -121,9 +121,9 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
 
 export function handleIndividualPayoutClaimed(event: IndividualPayoutClaimedEvent): void {
   // Create individual payout claim record
-  let payoutClaim = new PayoutClaim(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString() + "-individual"
+  let payoutClaim = new PayoutClaim(Bytes.fromUTF8(claimId))
+  
   payoutClaim.wrappedToken = event.address
   payoutClaim.user = event.params.user
   payoutClaim.amount = event.params.amount
@@ -158,9 +158,9 @@ export function handleIndividualPayoutClaimed(event: IndividualPayoutClaimedEven
 }
 
 export function handleFinalTokensClaimed(event: FinalTokensClaimedEvent): void {
-  let finalClaim = new FinalTokenClaim(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let finalClaim = new FinalTokenClaim(Bytes.fromUTF8(claimId))
+  
   finalClaim.wrappedToken = event.address
   finalClaim.user = event.params.user
   finalClaim.amount = event.params.amount
@@ -196,9 +196,9 @@ export function handleEmergencyUnlockEnabled(event: EmergencyUnlockEnabledEvent)
 }
 
 export function handleEmergencyUnlockUsed(event: EmergencyUnlockUsedEvent): void {
-  let emergencyUnlock = new EmergencyUnlock(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let unlockId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let emergencyUnlock = new EmergencyUnlock(Bytes.fromUTF8(unlockId))
+  
   emergencyUnlock.wrappedToken = event.address
   emergencyUnlock.user = event.params.user
   emergencyUnlock.amount = event.params.amount
@@ -255,9 +255,9 @@ export function handleTransfer(event: TransferEvent): void {
   if (!wrappedToken) return
 
   // Create transfer record
-  let transfer = new WrappedTokenTransfer(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let transferId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let transfer = new WrappedTokenTransfer(Bytes.fromUTF8(transferId))
+  
   transfer.wrappedToken = event.address
   transfer.from = event.params.from
   transfer.to = event.params.to
@@ -298,9 +298,9 @@ export function handleTransfer(event: TransferEvent): void {
     wrappedToken.save()
 
     // Create investment registration record
-    let registration = new WrappedTokenInvestmentRegistration(
-      event.transaction.hash.concatI32(event.logIndex.toI32()).concat(Bytes.fromUTF8("-registration"))
-    )
+    let registrationId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString() + "-registration"
+    let registration = new WrappedTokenInvestmentRegistration(Bytes.fromUTF8(registrationId))
+    
     registration.wrappedToken = event.address
     registration.user = event.params.to
     registration.amount = event.params.value
@@ -335,9 +335,9 @@ export function handleTransfer(event: TransferEvent): void {
 }
 
 export function handleRoleGranted(event: RoleGrantedEvent): void {
-  let roleChange = new RoleChange(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let roleId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let roleChange = new RoleChange(Bytes.fromUTF8(roleId))
+  
   roleChange.wrappedToken = event.address
   roleChange.role = event.params.role
   roleChange.account = event.params.account
@@ -350,9 +350,9 @@ export function handleRoleGranted(event: RoleGrantedEvent): void {
 }
 
 export function handleRoleRevoked(event: RoleRevokedEvent): void {
-  let roleChange = new RoleChange(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let roleId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let roleChange = new RoleChange(Bytes.fromUTF8(roleId))
+  
   roleChange.wrappedToken = event.address
   roleChange.role = event.params.role
   roleChange.account = event.params.account
@@ -365,9 +365,9 @@ export function handleRoleRevoked(event: RoleRevokedEvent): void {
 }
 
 export function handlePaused(event: PausedEvent): void {
-  let pauseEvent = new PauseEvent(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let pauseId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let pauseEvent = new PauseEvent(Bytes.fromUTF8(pauseId))
+  
   pauseEvent.wrappedToken = event.address
   pauseEvent.action = "paused"
   pauseEvent.account = event.params.account
@@ -378,9 +378,9 @@ export function handlePaused(event: PausedEvent): void {
 }
 
 export function handleUnpaused(event: UnpausedEvent): void {
-  let pauseEvent = new PauseEvent(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
+  let pauseId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let pauseEvent = new PauseEvent(Bytes.fromUTF8(pauseId))
+  
   pauseEvent.wrappedToken = event.address
   pauseEvent.action = "unpaused"
   pauseEvent.account = event.params.account
