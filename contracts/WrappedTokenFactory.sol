@@ -28,28 +28,39 @@ contract WrappedTokenFactory is Ownable {
     ) external returns (address wrappedTokenAddress) {
         WRAPEDTOKEN wrappedToken = new WRAPEDTOKEN(config);
         wrappedTokenAddress = address(wrappedToken);
-        
+
         // Grant DEFAULT_ADMIN_ROLE to the original caller (not the factory)
         bytes32 DEFAULT_ADMIN_ROLE = wrappedToken.DEFAULT_ADMIN_ROLE();
-        wrappedToken.grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        wrappedToken.grantRole(DEFAULT_ADMIN_ROLE, config.admin);
 
         wrappedTokens[count] = wrappedTokenAddress;
         creators[wrappedTokenAddress] = msg.sender;
         byCreator[msg.sender].push(count);
 
-        emit WrappedTokenDeployed(count, msg.sender, wrappedTokenAddress, config.offeringContract);
+        emit WrappedTokenDeployed(
+            count,
+            msg.sender,
+            wrappedTokenAddress,
+            config.offeringContract
+        );
         count++;
     }
 
-    function getWrappedTokenAddress(uint256 tokenId) external view returns (address) {
+    function getWrappedTokenAddress(
+        uint256 tokenId
+    ) external view returns (address) {
         return wrappedTokens[tokenId];
     }
 
-    function getWrappedTokenCreator(address wrappedTokenAddress) external view returns (address) {
+    function getWrappedTokenCreator(
+        address wrappedTokenAddress
+    ) external view returns (address) {
         return creators[wrappedTokenAddress];
     }
 
-    function getWrappedTokenIdsByCreator(address creator) external view returns (uint256[] memory) {
+    function getWrappedTokenIdsByCreator(
+        address creator
+    ) external view returns (uint256[] memory) {
         return byCreator[creator];
     }
 

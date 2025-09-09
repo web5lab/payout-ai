@@ -15,9 +15,16 @@ struct WrapedTokenConfig {
     uint256 maturityDate;
     uint256 payoutRate;
     address offeringContract;
+    address admin;
 }
 
-contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, ReentrancyGuard {
+contract WRAPEDTOKEN is
+    ERC20,
+    ERC20Burnable,
+    AccessControl,
+    Pausable,
+    ReentrancyGuard
+{
     enum PayoutFrequency {
         Daily,
         Monthly,
@@ -70,15 +77,26 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     error PayoutPeriodNotElapsed();
 
     event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
-    event PayoutClaimed(address indexed user, uint256 amount, uint256 remainingBalance);
+    event PayoutClaimed(
+        address indexed user,
+        uint256 amount,
+        uint256 remainingBalance
+    );
     event IndividualPayoutClaimed(address indexed user, uint256 amount);
     event FinalTokensClaimed(address indexed user, uint256 amount);
     event EmergencyUnlockEnabled(uint256 penalty);
-    event EmergencyUnlockUsed(address indexed user, uint256 amount, uint256 penalty);
+    event EmergencyUnlockUsed(
+        address indexed user,
+        uint256 amount,
+        uint256 penalty
+    );
 
-    constructor(WrapedTokenConfig memory config) ERC20(config.name, config.symbol) {
-        if (config.peggedToken == address(0) || config.payoutToken == address(0))
-            revert InvalidStablecoin();
+    constructor(
+        WrapedTokenConfig memory config
+    ) ERC20(config.name, config.symbol) {
+        if (
+            config.peggedToken == address(0) || config.payoutToken == address(0)
+        ) revert InvalidStablecoin();
         peggedToken = IERC20(config.peggedToken);
         payoutToken = IERC20(config.payoutToken);
         maturityDate = config.maturityDate;
@@ -88,7 +106,7 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         // Grant roles to the deployer (WrappedTokenFactory)
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAYOUT_ADMIN_ROLE, msg.sender);
-        
+
         // Also grant DEFAULT_ADMIN_ROLE to the offering contract's deployer
         // This is needed because the factory deploys the token, but we need the original deployer to have admin rights
         // We'll handle this in the factory instead
@@ -156,7 +174,9 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         if (user.deposited == 0) revert NoDeposit();
         if (user.hasClaimedTokens) revert Claimed();
 
-        uint256 payoutPeriodSeconds = _getPayoutPeriodSeconds(user.payoutFrequency);
+        uint256 payoutPeriodSeconds = _getPayoutPeriodSeconds(
+            user.payoutFrequency
+        );
         if (payoutPeriodSeconds == 0) revert NoPayout();
 
         uint256 timeElapsed = block.timestamp - user.lastPayoutTime;
@@ -181,9 +201,11 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     }
 
     // Admin adds payout funds and distributes to all investors proportionally
-    function addPayoutFunds(uint256 _amount) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
+    function addPayoutFunds(
+        uint256 _amount
+    ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
         if (_amount == 0) revert InvalidAmt();
-        
+
         // Transfer payout tokens to this contract
         if (!payoutToken.transferFrom(msg.sender, address(this), _amount))
             revert TransferFailed();
@@ -213,10 +235,10 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
 
         uint256 totalSupply = totalSupply();
         uint256 userShare = (totalPayoutFunds * userBalance) / totalSupply;
-        
+
         // Subtract what user has already claimed
         uint256 availableToClaim = userShare - user.totalPayoutBalance;
-        
+
         if (availableToClaim == 0) revert NoPayout();
 
         user.totalPayoutBalance = userShare;
@@ -224,11 +246,21 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         if (!payoutToken.transfer(msg.sender, availableToClaim))
             revert TransferFailed();
 
-        emit PayoutClaimed(msg.sender, availableToClaim, userShare - availableToClaim);
+        emit PayoutClaimed(
+            msg.sender,
+            availableToClaim,
+            userShare - availableToClaim
+        );
     }
 
     // Get user's total available payout balance
-    function getUserPayoutBalance(address _user) external view returns (uint256 totalAvailable, uint256 claimed, uint256 claimable) {
+    function getUserPayoutBalance(
+        address _user
+    )
+        external
+        view
+        returns (uint256 totalAvailable, uint256 claimed, uint256 claimable)
+    {
         Investor storage user = investors[_user];
         if (user.deposited == 0) return (0, 0, 0);
 
@@ -244,7 +276,9 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     }
 
     // Emergency unlock feature - allows users to unlock tokens before maturity with penalty
-    function enableEmergencyUnlock(uint256 _penaltyPercentage) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function enableEmergencyUnlock(
+        uint256 _penaltyPercentage
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_penaltyPercentage > 5000) revert InvalidPenalty(); // Max 50% penalty
         emergencyUnlockEnabled = true;
         emergencyUnlockPenalty = _penaltyPercentage;
@@ -259,7 +293,7 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     // User can emergency unlock their tokens before maturity (with penalty)
     function emergencyUnlock() external nonReentrant {
         if (!emergencyUnlockEnabled) revert UnlockDisabled();
-        
+
         Investor storage user = investors[msg.sender];
         if (user.deposited == 0) revert NoDeposit();
         if (user.emergencyUnlocked) revert AlreadyUnlocked();
@@ -269,7 +303,8 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         if (wrappedBalance == 0) revert NoDeposit();
 
         // Calculate penalty
-        uint256 penaltyAmount = (user.deposited * emergencyUnlockPenalty) / 10000;
+        uint256 penaltyAmount = (user.deposited * emergencyUnlockPenalty) /
+            10000;
         uint256 amountToReturn = user.deposited - penaltyAmount;
 
         // Burn wrapped tokens
@@ -311,12 +346,16 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     }
 
     // Grant payout admin role
-    function grantPayoutAdminRole(address _admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function grantPayoutAdminRole(
+        address _admin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(PAYOUT_ADMIN_ROLE, _admin);
     }
 
     // Revoke payout admin role
-    function revokePayoutAdminRole(address _admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function revokePayoutAdminRole(
+        address _admin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(PAYOUT_ADMIN_ROLE, _admin);
     }
 

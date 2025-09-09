@@ -28,7 +28,9 @@ contract MockV3Aggregator {
 
     // CRITICAL FIX: Changed return type from uint256 to int224
     function read() external view returns (int224, uint32) {
-        uint32 timestamp = fresh ? uint32(block.timestamp) : uint32(block.timestamp - 4000);
+        uint32 timestamp = fresh
+            ? uint32(block.timestamp)
+            : uint32(block.timestamp - 4000);
         return (price, timestamp);
     }
 }

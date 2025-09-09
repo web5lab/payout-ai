@@ -39,8 +39,14 @@ contract Escrow is Ownable, ReentrancyGuard {
     }
 
     // Deposit native ETH
-    function depositNative(address _offeringContract, address _investor) external payable {
-        require(msg.sender == _offeringContract, "Only offering contract can deposit");
+    function depositNative(
+        address _offeringContract,
+        address _investor
+    ) external payable {
+        require(
+            msg.sender == _offeringContract,
+            "Only offering contract can deposit"
+        );
         require(msg.value > 0, "Invalid amount");
         require(!refundsEnabled, "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
@@ -61,7 +67,10 @@ contract Escrow is Ownable, ReentrancyGuard {
         address tokenAddr,
         uint256 amount
     ) external nonReentrant {
-        require(msg.sender == _offeringContract, "Only offering contract can deposit");
+        require(
+            msg.sender == _offeringContract,
+            "Only offering contract can deposit"
+        );
         require(tokenAddr != address(0), "Invalid token");
         require(amount > 0, "Invalid amount");
         require(!refundsEnabled, "Refunds already enabled");
@@ -69,7 +78,11 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(_investor != address(0), "Invalid investor address");
 
         require(
-            IERC20(tokenAddr).transferFrom(_offeringContract, address(this), amount),
+            IERC20(tokenAddr).transferFrom(
+                _offeringContract,
+                address(this),
+                amount
+            ),
             "Transfer failed"
         );
 
@@ -88,7 +101,10 @@ contract Escrow is Ownable, ReentrancyGuard {
     }
 
     // Owner initiates refund to a specific investor for a specific offering contract
-    function refund(address _offeringContract, address _investor) external onlyOwner nonReentrant {
+    function refund(
+        address _offeringContract,
+        address _investor
+    ) external onlyOwner nonReentrant {
         require(refundsEnabled, "Refunds not enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
@@ -116,7 +132,12 @@ contract Escrow is Ownable, ReentrancyGuard {
             );
         }
 
-        emit Refunded(_offeringContract, _investor, userDeposit.token, userDeposit.amount);
+        emit Refunded(
+            _offeringContract,
+            _investor,
+            userDeposit.token,
+            userDeposit.amount
+        );
     }
 
     // Owner withdraws ETH or ERC20 tokens from the contract

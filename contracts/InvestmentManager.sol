@@ -14,7 +14,11 @@ contract InvestmentManager is Ownable {
         uint256 tokensReceived
     );
 
-    event TokensClaimed(address indexed investor, address indexed offeringAddress, uint256 amount);
+    event TokensClaimed(
+        address indexed investor,
+        address indexed offeringAddress,
+        uint256 amount
+    );
 
     constructor() Ownable(msg.sender) {}
 
@@ -35,7 +39,11 @@ contract InvestmentManager is Ownable {
                 _paymentAmount
             );
         } else {
-            tokensReceivedAmount = offering.invest(_paymentToken, msg.sender, _paymentAmount);
+            tokensReceivedAmount = offering.invest(
+                _paymentToken,
+                msg.sender,
+                _paymentAmount
+            );
         }
 
         // Emit event for subgraph

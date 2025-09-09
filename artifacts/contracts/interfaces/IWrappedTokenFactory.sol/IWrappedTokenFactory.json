@@ -41,6 +41,11 @@
               "internalType": "address",
               "name": "offeringContract",
               "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "admin",
+              "type": "address"
             }
           ],
           "internalType": "struct WrapedTokenConfig",

@@ -87,7 +87,9 @@ contract OfferingFactory is Ownable {
         wrappedTokenFactory = IWrappedTokenFactory(_wrappedTokenFactory);
     }
 
-    function setWrappedTokenFactory(address _wrappedTokenFactory) external onlyOwner {
+    function setWrappedTokenFactory(
+        address _wrappedTokenFactory
+    ) external onlyOwner {
         require(_wrappedTokenFactory != address(0), "Invalid factory");
         address oldFactory = address(wrappedTokenFactory);
         wrappedTokenFactory = IWrappedTokenFactory(_wrappedTokenFactory);
@@ -107,9 +109,14 @@ contract OfferingFactory is Ownable {
         emit USDTConfigUpdated(_usdtAddress, _usdtOracleAddress);
     }
 
-    function createOffering(CreateOfferingConfig memory config) external onlyOwner returns (address offeringAddress) {
+    function createOffering(
+        CreateOfferingConfig memory config
+    ) external onlyOwner returns (address offeringAddress) {
         require(config.escrowAddress != address(0), "Invalid escrow address");
-        require(config.payoutTokenAddress != address(0), "Invalid payout token address");
+        require(
+            config.payoutTokenAddress != address(0),
+            "Invalid payout token address"
+        );
 
         address wrappedTokenAddress = address(0);
 
@@ -122,11 +129,14 @@ contract OfferingFactory is Ownable {
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
                 payoutRate: config.payoutRate,
-                offeringContract: address(offering)
+                offeringContract: address(offering),
+                admin: msg.sender
             });
-            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(wrappedConfig);
+            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
+                wrappedConfig
+            );
         }
-        
+
         InitConfig memory initConfig = InitConfig({
             saleToken: config.saleToken,
             minInvestment: config.minInvestment,
@@ -146,18 +156,26 @@ contract OfferingFactory is Ownable {
             payoutRate: config.payoutRate,
             defaultPayoutFrequency: config.defaultPayoutFrequency
         });
-        
+
         offering.initialize(initConfig);
         offeringAddress = address(offering);
 
         _storeOffering(offeringAddress, config.tokenOwner);
     }
 
-    function createOfferingWithPaymentTokens(CreateOfferingWithTokensConfig memory config) external onlyOwner returns (address offeringAddress) {
-        require(config.paymentTokens.length == config.oracles.length, "Array length mismatch");
+    function createOfferingWithPaymentTokens(
+        CreateOfferingWithTokensConfig memory config
+    ) external onlyOwner returns (address offeringAddress) {
+        require(
+            config.paymentTokens.length == config.oracles.length,
+            "Array length mismatch"
+        );
         require(config.paymentTokens.length > 0, "No payment tokens provided");
         require(config.escrowAddress != address(0), "Invalid escrow address");
-        require(config.payoutTokenAddress != address(0), "Invalid payout token address");
+        require(
+            config.payoutTokenAddress != address(0),
+            "Invalid payout token address"
+        );
 
         address wrappedTokenAddress = address(0);
         Offering offering = new Offering();
@@ -170,11 +188,14 @@ contract OfferingFactory is Ownable {
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
                 payoutRate: config.payoutRate,
-                offeringContract: address(offering)
+                offeringContract: address(offering),
+                admin: msg.sender
             });
-            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(wrappedConfig);
+            wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
+                wrappedConfig
+            );
         }
-        
+
         InitConfig memory initConfig = InitConfig({
             saleToken: config.saleToken,
             minInvestment: config.minInvestment,
@@ -194,7 +215,7 @@ contract OfferingFactory is Ownable {
             payoutRate: config.payoutRate,
             defaultPayoutFrequency: config.defaultPayoutFrequency
         });
-        
+
         offering.initialize(initConfig);
         offeringAddress = address(offering);
 
@@ -209,16 +230,25 @@ contract OfferingFactory is Ownable {
     ) internal {
         for (uint256 i = 0; i < paymentTokens.length; i++) {
             if (paymentTokens[i] != address(0)) {
-                require(oracles[i] != address(0), "Invalid oracle for ERC20 token");
+                require(
+                    oracles[i] != address(0),
+                    "Invalid oracle for ERC20 token"
+                );
             } else {
-                require(oracles[i] != address(0), "Invalid oracle for native ETH");
+                require(
+                    oracles[i] != address(0),
+                    "Invalid oracle for native ETH"
+                );
             }
             offering.setTokenOracle(paymentTokens[i], oracles[i]);
             offering.setWhitelistedPaymentToken(paymentTokens[i], true);
         }
     }
 
-    function _storeOffering(address offeringAddress, address tokenOwner) internal {
+    function _storeOffering(
+        address offeringAddress,
+        address tokenOwner
+    ) internal {
         offerings[count] = offeringAddress;
         owners[offeringAddress] = msg.sender;
         byOwner[tokenOwner].push(count);
@@ -227,15 +257,21 @@ contract OfferingFactory is Ownable {
         count++;
     }
 
-    function getOfferingAddress(uint256 offeringId) external view returns (address) {
+    function getOfferingAddress(
+        uint256 offeringId
+    ) external view returns (address) {
         return offerings[offeringId];
     }
 
-    function getOfferingOwner(address offeringAddress) external view returns (address) {
+    function getOfferingOwner(
+        address offeringAddress
+    ) external view returns (address) {
         return owners[offeringAddress];
     }
 
-    function getOfferingIdsByTokenOwner(address tokenOwner) external view returns (uint256[] memory) {
+    function getOfferingIdsByTokenOwner(
+        address tokenOwner
+    ) external view returns (uint256[] memory) {
         return byOwner[tokenOwner];
     }
 
@@ -247,7 +283,11 @@ contract OfferingFactory is Ownable {
         return result;
     }
 
-    function getUSDTConfig() external view returns (address usdtToken, address usdtOracle) {
+    function getUSDTConfig()
+        external
+        view
+        returns (address usdtToken, address usdtOracle)
+    {
         return (usdtAddress, usdtOracleAddress);
     }
 }

@@ -24,7 +24,10 @@ interface IWRAPEDTOKEN {
 }
 
 interface IEscrow {
-    function depositNative(address _offeringContract, address _investor) external payable;
+    function depositNative(
+        address _offeringContract,
+        address _investor
+    ) external payable;
     function depositToken(
         address _offeringContract,
         address _investor,
@@ -66,8 +69,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     uint256 public maturityDate;
     bool public autoTransfer;
 
-    uint256 public fundraisingCap; 
-    uint256 public totalRaised; 
+    uint256 public fundraisingCap;
+    uint256 public totalRaised;
     uint256 public totalPendingTokens;
     bool public isSaleClosed;
     bool public apyEnabled;
@@ -120,13 +123,22 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         );
         require(config.fundraisingCap > 0, "Fundraising cap must be positive");
         require(config.tokenPrice > 0, "Token price must be positive");
-        require(config.minInvestment <= config.maxInvestment, "Min > max investment");
+        require(
+            config.minInvestment <= config.maxInvestment,
+            "Min > max investment"
+        );
         require(
             block.timestamp <= config.startDate,
             "Start date must be in the future"
         );
-        require(config.startDate < config.endDate, "Start date must be before end date");
-        require(config.payoutTokenAddress != address(0), "Invalid payout token address");
+        require(
+            config.startDate < config.endDate,
+            "Start date must be before end date"
+        );
+        require(
+            config.payoutTokenAddress != address(0),
+            "Invalid payout token address"
+        );
 
         saleToken = IERC20(config.saleToken);
         minInvestment = config.minInvestment;
@@ -215,7 +227,10 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         if (paymentToken == address(0)) {
             // Native currency to Escrow
             require(msg.value == paymentAmount, "Incorrect native amount");
-            IEscrow(escrowAddress).depositNative{value: msg.value}(address(this), investor);
+            IEscrow(escrowAddress).depositNative{value: msg.value}(
+                address(this),
+                investor
+            );
         } else {
             // ERC20 payment to Escrow
             require(msg.value == 0, "Do not send ETH for token payment");
@@ -225,7 +240,12 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
                 paymentAmount
             );
             IERC20(paymentToken).approve(escrowAddress, paymentAmount);
-            IEscrow(escrowAddress).depositToken(address(this), investor, paymentToken, paymentAmount);
+            IEscrow(escrowAddress).depositToken(
+                address(this),
+                investor,
+                paymentToken,
+                paymentAmount
+            );
         }
         // Handle token distribution
         if (autoTransfer) {
@@ -277,9 +297,13 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(value > 0, "Invalid price");
 
         uint8 tokenDecimals = token == address(0)
-            ? 18 : IERC20Metadata(token).decimals();
+            ? 18
+            : IERC20Metadata(token).decimals();
 
-        usdValue = (amount * uint256(int256(value)) * 1e18) / (10 ** tokenDecimals) / 1e18;
+        usdValue =
+            (amount * uint256(int256(value)) * 1e18) /
+            (10 ** tokenDecimals) /
+            1e18;
     }
 
     /**
