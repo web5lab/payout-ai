@@ -296,43 +296,6 @@ contract WRAPEDTOKEN is
         distributePayoutForPeriod(_amount);
     }
 
-        // Calculate user's share of total payout funds
-        uint256 userBalance = balanceOf(msg.sender);
-        if (userBalance == 0) revert NoDeposit();
-
-        uint256 totalSupply = totalSupply();
-        if (totalSupply == 0) revert NoDeposit();
-        
-        if (totalSupply == 0) revert NoDeposit();
-        
-        // Calculate user's proportional share of total payout funds
-        uint256 userShare = (totalPayoutFunds * userBalance) / totalSupply;
-
-        // Subtract what user has already claimed
-        uint256 availableToClaim = userShare - user.totalPayoutBalance;
-
-        if (availableToClaim == 0) revert NoPayout();
-        
-        // Ensure we don't try to transfer more than the contract has
-        uint256 contractBalance = payoutToken.balanceOf(address(this));
-        if (availableToClaim > contractBalance) {
-            availableToClaim = contractBalance;
-        }
-        
-        if (availableToClaim == 0) revert NoPayout();
-        
-        user.totalPayoutBalance += availableToClaim;
-
-        if (!payoutToken.transfer(msg.sender, availableToClaim))
-            revert TransferFailed();
-
-        emit PayoutClaimed(
-            msg.sender,
-            availableToClaim,
-            userShare - user.totalPayoutBalance
-        );
-    }
-
     // Get user's payout balance including unclaimed periods
     function getUserPayoutBalance(
         address _user
