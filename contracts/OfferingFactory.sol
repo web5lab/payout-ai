@@ -102,13 +102,15 @@ contract OfferingFactory is Ownable {
         if (config.apyEnabled) {
             wrappedTokenAddress = address(
                 new WRAPEDTOKEN(
-                    "Wrapped Token",
-                    "WRT",
-                    config.saleToken,
-                    config.payoutTokenAddress,
-                    config.maturityDate,
-                    config.payoutRate,
-                    address(offering)
+                    WrapedTokenConfig({
+                        name: "Wrapped Token",
+                        symbol: "WRT",
+                        peggedToken: config.saleToken,
+                        payoutToken: config.payoutTokenAddress,
+                        maturityDate: config.maturityDate,
+                        payoutRate: config.payoutRate,
+                        offeringContract: address(offering)
+                    })
                 )
             );
         }
