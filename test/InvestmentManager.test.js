@@ -90,7 +90,7 @@ describe("InvestmentManager Contract", function () {
     describe("Route Investment (ERC20)", function () {
         it("Should successfully route an ERC20 investment to an offering", async function () {
             const fixture = await loadFixture(deployInvestmentManagerFixture);
-            const {  investor1, paymentToken, saleToken, investmentManager } = fixture;
+            const { investor1, paymentToken, saleToken, investmentManager, tokenOwner } = fixture;
             const {  offering, startDate } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             const paymentAmount = ethers.parseUnits("0.05", 18); // 0.05 PAY tokens = 100 USD (within min/max investment)
@@ -102,7 +102,8 @@ describe("InvestmentManager Contract", function () {
             await paymentToken.connect(investor1).approve(offeringAddressResolved, paymentAmount);
 
             // Mint sale tokens to offering for distribution
-            await saleToken.mint(offeringAddressResolved, expectedTokens);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offeringAddressResolved, expectedTokens);
 
             await time.increaseTo(startDate);
 
@@ -147,7 +148,7 @@ describe("InvestmentManager Contract", function () {
     describe("Route Investment (Native ETH)", function () {
         it("Should successfully route a native ETH investment to an offering", async function () {
             const fixture = await loadFixture(deployInvestmentManagerFixture);
-            const { admin, investor1, saleToken, investmentManager } = fixture;
+            const { admin, investor1, saleToken, investmentManager, tokenOwner } = fixture;
             const { offeringAddress, offering, startDate } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             const paymentAmount = ethers.parseUnits("0.1", 18); // 0.1 ETH = 200 USD (assuming 1 ETH = 2000 USD for simplicity in this test context)
@@ -155,7 +156,8 @@ describe("InvestmentManager Contract", function () {
 
             // Mint sale tokens to offering for distribution
             const offeringAddressResolved = await offering.getAddress();
-            await saleToken.mint(offeringAddressResolved, expectedTokens);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offeringAddressResolved, expectedTokens);
 
             await time.increaseTo(startDate);
 
@@ -193,6 +195,38 @@ describe("InvestmentManager Contract", function () {
                 paymentAmount,
                 { value: ethers.parseUnits("0.05", 18) } // Sending less ETH
             )).to.be.revertedWith("Incorrect native amount"); // This revert string is from Offering.sol
+        });
+
+        it("Should handle claiming tokens after maturity", async function () {
+            const fixture = await loadFixture(deployInvestmentManagerFixture);
+            const { investor1, paymentToken, saleToken, investmentManager, tokenOwner } = fixture;
+            const { offering, startDate, maturityDate } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
+
+            const paymentAmount = ethers.parseUnits("0.05", 18);
+            const expectedTokens = ethers.parseUnits("1000", 18);
+
+            const offeringAddressResolved = await offering.getAddress();
+            await paymentToken.mint(investor1.address, paymentAmount);
+            await paymentToken.connect(investor1).approve(offeringAddressResolved, paymentAmount);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offeringAddressResolved, expectedTokens);
+
+            await time.increaseTo(startDate);
+            await investmentManager.connect(investor1).routeInvestment(
+                offeringAddressResolved,
+                paymentToken.target,
+                paymentAmount
+            );
+
+            // Fast forward to maturity
+            await time.increaseTo(maturityDate + 1);
+
+            // Claim tokens via InvestmentManager
+            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offeringAddressResolved))
+                .to.emit(investmentManager, "TokensClaimed")
+                .withArgs(investor1.address, offeringAddressResolved, expectedTokens);
+
+            expect(await saleToken.balanceOf(investor1.address)).to.equal(expectedTokens);
         });
     });
 

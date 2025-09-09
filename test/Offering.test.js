@@ -209,7 +209,7 @@ describe("Offering Contract (Integrated)", function () {
     describe("Claiming Logic", function () {
         it("Should allow claiming after maturity", async function () {
             const fixture = await loadFixture(deployOfferingEcosystemFixture);
-            const { offering, admin, investor1, saleToken, paymentToken, oracle, investmentManager } = fixture;
+            const { offering, admin, investor1, saleToken, paymentToken, oracle, investmentManager, tokenOwner } = fixture;
             const { maturityDate, startDate } = await initializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             await offering.connect(admin).setWhitelistedPaymentToken(paymentToken.target, true);
@@ -217,7 +217,8 @@ describe("Offering Contract (Integrated)", function () {
             
             const paymentAmount = ethers.parseUnits("100", 18);
             const expectedTokens = ethers.parseUnits("2000", 18);
-            await saleToken.mint(offering.target, expectedTokens);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offering.target, expectedTokens);
             await paymentToken.mint(investor1.address, paymentAmount);
             await paymentToken.connect(investor1).approve(offering.target, paymentAmount);
 
@@ -225,7 +226,7 @@ describe("Offering Contract (Integrated)", function () {
             await offering.connect(investmentManager).invest(paymentToken.target, investor1.address, paymentAmount);
             
             await time.increaseTo(maturityDate + 1);
-            await expect(offering.connect(investor1).claimTokens()).to.changeTokenBalances(
+            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.changeTokenBalances(
                 saleToken,
                 [offering, investor1],
                 [-expectedTokens, expectedTokens]
@@ -234,65 +235,93 @@ describe("Offering Contract (Integrated)", function () {
 
         it("Should revert claiming before maturity", async function () {
             const fixture = await loadFixture(deployOfferingEcosystemFixture);
-            const { offering, admin, investor1, paymentToken, oracle, investmentManager } = fixture;
+            const { offering, admin, investor1, paymentToken, oracle, investmentManager, tokenOwner } = fixture;
             const { startDate } = await initializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             await offering.connect(admin).setWhitelistedPaymentToken(paymentToken.target, true);
             await offering.connect(admin).setTokenOracle(paymentToken.target, oracle.target);
             
             const paymentAmount = ethers.parseUnits("100", 18);
+            const expectedTokens = ethers.parseUnits("2000", 18);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offering.target, expectedTokens);
             await paymentToken.mint(investor1.address, paymentAmount);
             await paymentToken.connect(investor1).approve(offering.target, paymentAmount);
 
             await time.increaseTo(startDate);
             await offering.connect(investmentManager).invest(paymentToken.target, investor1.address, paymentAmount);
             
-            await expect(offering.connect(investor1).claimTokens()).to.be.revertedWith("Maturity not reached");
+            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.be.revertedWith("Maturity not reached");
         });
 
         it("Should revert if no tokens to claim", async function () {
             const fixture = await loadFixture(deployOfferingEcosystemFixture);
-            const { offering, investor1 } = fixture;
+            const { offering, investmentManager, investor1 } = fixture;
             const { maturityDate } = await initializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
             await time.increaseTo(maturityDate + 1);
-            await expect(offering.connect(investor1).claimTokens()).to.be.revertedWith("No tokens to claim");
+            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.be.revertedWith("No tokens to claim");
         });
     });
 
     describe("Admin Functions", function () {
         it("Should allow admin to set whitelisted token", async function () {
-            const { offering, admin, paymentToken, investmentManager } = await loadFixture(deployOfferingEcosystemFixture);
-            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken: paymentToken, investmentManager }, { apyEnabled: false });
+            const { offering, admin, paymentToken, investmentManager, saleToken } = await loadFixture(deployOfferingEcosystemFixture);
+            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken, investmentManager }, { apyEnabled: false });
             await offering.connect(admin).setWhitelistedPaymentToken(paymentToken.target, true);
             expect(await offering.whitelistedPaymentTokens(paymentToken.target)).to.be.true;
         });
 
         it("Should allow admin to set token oracle", async function () {
-            const { offering, admin, paymentToken, oracle, investmentManager } = await loadFixture(deployOfferingEcosystemFixture);
-            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken: paymentToken, investmentManager }, { apyEnabled: false });
+            const { offering, admin, paymentToken, oracle, investmentManager, saleToken } = await loadFixture(deployOfferingEcosystemFixture);
+            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken, investmentManager }, { apyEnabled: false });
             await offering.connect(admin).setTokenOracle(paymentToken.target, oracle.target);
             expect(await offering.tokenOracles(paymentToken.target)).to.equal(oracle.target);
         });
 
         it("Should allow token owner to set token price", async function () {
-            const { offering, admin, tokenOwner, paymentToken, investmentManager } = await loadFixture(deployOfferingEcosystemFixture);
-            await initializeOffering({ offering, admin, tokenOwner, treasuryOwner: admin, saleToken: paymentToken, investmentManager }, { apyEnabled: false });
+            const { offering, admin, tokenOwner, paymentToken, investmentManager, saleToken } = await loadFixture(deployOfferingEcosystemFixture);
+            await initializeOffering({ offering, admin, tokenOwner, treasuryOwner: admin, saleToken, investmentManager }, { apyEnabled: false });
             const newPrice = ethers.parseUnits("0.2", 18);
             await offering.connect(tokenOwner).setTokenPrice(newPrice);
             expect(await offering.tokenPrice()).to.equal(newPrice);
         });
 
         it("Should revert if non-admin tries to set whitelisted token", async function () {
-            const { offering, admin, otherAccount, paymentToken, investmentManager } = await loadFixture(deployOfferingEcosystemFixture);
-            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken: paymentToken, investmentManager }, { apyEnabled: false });
+            const { offering, admin, otherAccount, paymentToken, investmentManager, saleToken } = await loadFixture(deployOfferingEcosystemFixture);
+            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken, investmentManager }, { apyEnabled: false });
             await expect(offering.connect(otherAccount).setWhitelistedPaymentToken(paymentToken.target, true)).to.be.reverted;
         });
 
         it("Should revert if non-token-owner tries to set token price", async function () {
-            const { offering, admin, otherAccount, paymentToken, investmentManager } = await loadFixture(deployOfferingEcosystemFixture);
-            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken: paymentToken, investmentManager }, { apyEnabled: false });
+            const { offering, admin, otherAccount, paymentToken, investmentManager, saleToken } = await loadFixture(deployOfferingEcosystemFixture);
+            await initializeOffering({ offering, admin, tokenOwner: admin, treasuryOwner: admin, saleToken, investmentManager }, { apyEnabled: false });
             const newPrice = ethers.parseUnits("0.2", 18);
             await expect(offering.connect(otherAccount).setTokenPrice(newPrice)).to.be.reverted;
+        });
+
+        it("Should handle APY enabled offerings with wrapped tokens", async function () {
+            const fixture = await loadFixture(deployOfferingEcosystemFixture);
+            const { offering, admin, investor1, saleToken, paymentToken, oracle, investmentManager, tokenOwner } = fixture;
+            const { startDate } = await initializeOffering(fixture, { apyEnabled: true, autoTransfer: true });
+
+            await offering.connect(admin).setWhitelistedPaymentToken(paymentToken.target, true);
+            await offering.connect(admin).setTokenOracle(paymentToken.target, oracle.target);
+            
+            const paymentAmount = ethers.parseUnits("100", 18);
+            const expectedTokens = ethers.parseUnits("2000", 18);
+            await saleToken.mint(tokenOwner.address, expectedTokens);
+            await saleToken.connect(tokenOwner).transfer(offering.target, expectedTokens);
+            await paymentToken.mint(investor1.address, paymentAmount);
+            await paymentToken.connect(investor1).approve(offering.target, paymentAmount);
+
+            await time.increaseTo(startDate);
+            await offering.connect(investmentManager).invest(paymentToken.target, investor1.address, paymentAmount);
+            
+            // Check that wrapped tokens were minted instead of direct transfer
+            const wrappedTokenAddress = await offering.wrappedTokenAddress();
+            const wrappedToken = await ethers.getContractAt("WRAPEDTOKEN", wrappedTokenAddress);
+            expect(await wrappedToken.balanceOf(investor1.address)).to.equal(expectedTokens);
+            expect(await saleToken.balanceOf(investor1.address)).to.equal(0); // No direct transfer
         });
     });
 });
