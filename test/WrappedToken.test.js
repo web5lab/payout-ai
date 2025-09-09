@@ -25,6 +25,14 @@ describe("WRAPEDTOKEN (Unit)", function () {
                 admin: admin.address
             })
         ).to.be.revertedWithCustomError(WrappedTokenFactory, "InvalidStablecoin");
+        
+        const wrappedToken = await WrappedTokenFactory.deploy({
+            name: "Wrapped Token", 
+            symbol: "wTKN", 
+            peggedToken: peggedToken.target, 
+            payoutToken: payoutToken.target, 
+            maturityDate: maturityDate, 
+            payoutRate: 100, 
             offeringContract: offeringContract.address,
             admin: owner.address
         });
@@ -311,10 +319,8 @@ describe("WRAPEDTOKEN (Unit)", function () {
 
             await expect(wrappedToken.connect(user1).claimFinalTokens())
                 .to.emit(wrappedToken, "FinalTokensClaimed")
-                .withArgs(user1.address, amount);
-            
-            await expect(() => wrappedToken.connect(user1).claimFinalTokens())
-                .to.changeTokenBalances(
+                .withArgs(user1.address, amount)
+                .and.to.changeTokenBalances(
                     peggedToken,
                     [wrappedToken, user1],
                     [-amount, amount]
