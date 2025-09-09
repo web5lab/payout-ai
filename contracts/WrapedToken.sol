@@ -66,8 +66,6 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     error UnlockDisabled();
     error AlreadyUnlocked();
     error InvalidPenalty();
-    error InvalidStablecoin();
-    error PayoutPeriodNotElapsed();
 
     event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
     event PayoutClaimed(address indexed user, uint256 amount, uint256 remainingBalance);
