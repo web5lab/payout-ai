@@ -4,14 +4,10 @@
   "scripts": {
     "codegen": "graph codegen",
     "build": "graph build",
-    "build-local": "graph build --network hardhat",
     "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ comprehensive-offering-payout-subgraph",
     "create-local": "graph create --node http://localhost:8020/ offering-contract-investment-manager",
     "remove-local": "graph remove --node http://localhost:8020/ offering-contract-investment-manager",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 offering-contract-investment-manager",
-    "deploy-local-hardhat": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 offering-payout-local subgraph.local.yaml",
-    "create-local-hardhat": "graph create --node http://localhost:8020/ offering-payout-local",
-    "remove-local-hardhat": "graph remove --node http://localhost:8020/ offering-payout-local",
     "test": "graph test"
   },
   "dependencies": {

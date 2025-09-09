@@ -34,7 +34,6 @@ export function handlePayoutFundsAdded(event: PayoutFundsAddedEvent): void {
 
   // Update wrapped token total funds
   wrappedToken.totalPayoutFunds = event.params.totalFunds
-  wrappedToken.lastPayoutDistributionTime = event.params.startTime
   wrappedToken.save()
 
   // Create payout round record
