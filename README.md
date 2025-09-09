@@ -96,3 +96,47 @@ To run a local simulation of the investment flow:
 2.  Run the simulation script:
     ```shell
     npx hardhat run scripts/simulation.js --network localhost
+    ```
+
+### Payout Flow Simulation
+
+To run a dedicated simulation of the wrapped token payout system:
+
+1.  Start a local Hardhat node (if not already running):
+    ```shell
+    npx hardhat node
+    ```
+2.  Run the payout flow simulation script:
+    ```shell
+    npx hardhat run scripts/payout-flow-simulation.js --network localhost
+    ```
+
+This dedicated script tests comprehensive payout scenarios including:
+
+*   **Basic Payout Flow**: Single investor investment, admin payout distribution, and user claims
+*   **Multiple Investors Proportional Payout**: Multiple investors with different amounts receiving proportional payouts
+*   **Multiple Payout Rounds**: Testing cumulative payout tracking across multiple distribution rounds
+*   **Emergency Unlock with Payout History**: Users claiming payouts before using emergency unlock feature
+*   **Dynamic Balance Adjustments**: How payout distribution changes when some investors exit early
+
+#### Key Features Demonstrated:
+
+*   **Admin Payout Management**: `addPayoutFunds()` for distributing rewards to all wrapped token holders
+*   **Proportional Distribution**: Payouts distributed based on wrapped token balance proportions
+*   **Emergency Unlock Integration**: Early exit with penalty while preserving payout history
+*   **Multiple Payout Rounds**: Cumulative payout tracking and claiming across multiple distributions
+*   **Dynamic Rebalancing**: Payout adjustments when token supply changes due to burns
+
+#### Running Both Simulations:
+
+For comprehensive testing of the entire ecosystem:
+
+```shell
+# Run general offering simulation
+npx hardhat run scripts/simulation.js --network localhost
+
+# Run dedicated payout flow simulation
+npx hardhat run scripts/payout-flow-simulation.js --network localhost
+```
+
+The payout flow simulation provides deep testing of the wrapped token payout mechanism and demonstrates how the system handles complex scenarios with multiple investors, multiple payout rounds, and emergency unlocks.
