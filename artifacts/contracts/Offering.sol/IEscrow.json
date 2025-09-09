@@ -9,6 +9,11 @@
           "internalType": "address",
           "name": "_offeringContract",
           "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_investor",
+          "type": "address"
         }
       ],
       "name": "depositNative",
@@ -21,6 +26,11 @@
         {
           "internalType": "address",
           "name": "_offeringContract",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_investor",
           "type": "address"
         },
         {
@@ -44,6 +54,11 @@
         {
           "internalType": "address",
           "name": "_offeringContract",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_investor",
           "type": "address"
         }
       ],

@@ -4,6 +4,13 @@
   "sourceName": "contracts/Offering.sol",
   "abi": [
     {
+      "inputs": [],
+      "name": "claimPayout",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "address",
@@ -14,6 +21,11 @@
           "internalType": "uint256",
           "name": "amount",
           "type": "uint256"
+        },
+        {
+          "internalType": "enum IWRAPEDTOKEN.PayoutFrequency",
+          "name": "_payoutFrequency",
+          "type": "uint8"
         }
       ],
       "name": "registerInvestment",
