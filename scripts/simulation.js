@@ -328,16 +328,21 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Deploy fresh escrow for this scenario
+    const FreshEscrow8 = await ethers.getContractFactory("Escrow");
+    const freshEscrow8 = await FreshEscrow8.deploy({ owner: treasuryOwner.address });
+    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    });
+    }, freshEscrow8);
     
+    await time.increaseTo(config.startDate + 10);
+
     const investAmountETH = parseUnits("0.1"); // 0.1 ETH = $200 (at $2000/ETH)
     const expectedSaleTokens = parseUnits("400"); // $200 / $0.5 = 400 tokens
 
     console.log("📝 Setting up ETH investment...");
-    await time.increaseTo(config.startDate + 10);
 
     console.log("💸 Investor 1 investing ETH via InvestmentManager...");
     await investmentManager.connect(investor1).routeInvestment(
@@ -354,7 +359,7 @@ async function main() {
     console.log(`✅ Tokens received from ETH: ${formatUnits(directBalance)} SALE tokens`);
     
     // Check escrow ETH balance
-    const escrowETHBalance = await ethers.provider.getBalance(await escrow.getAddress());
+    const escrowETHBalance = await ethers.provider.getBalance(await freshEscrow8.getAddress());
     await assert(escrowETHBalance == investAmountETH, 
       `Escrow ETH balance mismatch. Expected: ${formatUnits(investAmountETH)}, Got: ${formatUnits(escrowETHBalance)}`);
     console.log(`✅ ETH secured in escrow: ${formatUnits(escrowETHBalance)} ETH`);
@@ -735,14 +740,13 @@ async function main() {
     await saleToken.connect(tokenOwner).transfer(offeringAddress, parseUnits("10000"));
 
     await time.increaseTo(smallCapConfig.startDate + 10);
-      // Deploy fresh escrow for this scenario
-      const FreshEscrow5 = await ethers.getContractFactory("Escrow");
-      const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
-      
+    // Deploy fresh escrow for this scenario
+    const FreshEscrow5 = await ethers.getContractFactory("Escrow");
+    const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
+    
 
     // Investment that reaches the cap
-        autoTransfer: true,
-        customEscrow: freshEscrow5
+    const capReachingAmount = parseUnits("1000"); // $1000 - exactly the cap
     await paymentToken.connect(investor1).approve(offeringAddress, capReachingAmount);
     
     console.log("💸 Making investment that reaches fundraising cap...");
@@ -759,7 +763,7 @@ async function main() {
 
     // Try to invest after cap is reached (should fail)
     console.log("🔍 Testing investment after cap reached...");
-      const investAmountUSDT = parseUnits("250", 6); // 250 USDT tokens (6 decimals) = $250
+    const additionalAmount = parseUnits("100"); // $100 additional
     await paymentToken.connect(investor2).approve(offeringAddress, additionalAmount);
     
     try {
