@@ -53,10 +53,10 @@ struct CreateOfferingWithTokensConfig {
  * @dev Factory contract to deploy and manage Offering contracts.
  */
 contract OfferingFactory is Ownable {
-    uint256 public offeringCount;
+    uint256 public count;
     mapping(uint256 => address) public offerings;
-    mapping(address => address) public offeringOwners;
-    mapping(address => uint256[]) public offeringsByTokenOwner;
+    mapping(address => address) public owners;
+    mapping(address => uint256[]) public byOwner;
 
     // USDT configuration
     address public usdtAddress;
@@ -201,12 +201,12 @@ contract OfferingFactory is Ownable {
     }
 
     function _storeOffering(address offeringAddress, address tokenOwner) internal {
-        offerings[offeringCount] = offeringAddress;
-        offeringOwners[offeringAddress] = msg.sender;
-        offeringsByTokenOwner[tokenOwner].push(offeringCount);
+        offerings[count] = offeringAddress;
+        owners[offeringAddress] = msg.sender;
+        byOwner[tokenOwner].push(count);
 
-        emit OfferingDeployed(offeringCount, msg.sender, offeringAddress, tokenOwner);
-        offeringCount++;
+        emit OfferingDeployed(count, msg.sender, offeringAddress, tokenOwner);
+        count++;
     }
 
     function getOfferingAddress(uint256 offeringId) external view returns (address) {
@@ -214,16 +214,16 @@ contract OfferingFactory is Ownable {
     }
 
     function getOfferingOwner(address offeringAddress) external view returns (address) {
-        return offeringOwners[offeringAddress];
+        return owners[offeringAddress];
     }
 
     function getOfferingIdsByTokenOwner(address tokenOwner) external view returns (uint256[] memory) {
-        return offeringsByTokenOwner[tokenOwner];
+        return byOwner[tokenOwner];
     }
 
     function getAllOfferings() external view returns (address[] memory) {
-        address[] memory result = new address[](offeringCount);
-        for (uint256 i = 0; i < offeringCount; i++) {
+        address[] memory result = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
             result[i] = offerings[i];
         }
         return result;

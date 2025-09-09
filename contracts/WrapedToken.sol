@@ -52,19 +52,19 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     mapping(address => Investor) public investors;
     uint256 public totalPayoutFunds; // Total payout funds available in contract
 
-    error NoTransfersAllowed();
-    error InvalidAmount();
-    error InvalidStablecoin();
-    error AlreadyMatured();
+    error NoTransfers();
+    error InvalidAmt();
+    error InvalidToken();
+    error Matured();
     error NotMatured();
     error NoDeposit();
-    error AlreadyClaimed();
-    error TokenTransferFailed();
-    error NoPayoutDue();
-    error PayoutPeriodNotElapsed();
-    error InsufficientPayoutFunds();
-    error EmergencyUnlockNotEnabled();
-    error AlreadyEmergencyUnlocked();
+    error Claimed();
+    error TransferFailed();
+    error NoPayout();
+    error PeriodNotElapsed();
+    error InsufficientFunds();
+    error UnlockDisabled();
+    error AlreadyUnlocked();
     error InvalidPenalty();
 
     event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
@@ -116,18 +116,18 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         uint256 amount,
         PayoutFrequency _payoutFrequency
     ) external onlyOfferingContract {
-        if (amount == 0) revert InvalidAmount();
+        if (amount == 0) revert InvalidAmt();
 
         bool success = peggedToken.transferFrom(
             offeringContract,
             address(this),
             amount
         );
-        if (!success) revert TokenTransferFailed();
+        if (!success) revert TransferFailed();
 
         _mint(_user, amount);
 
-        uint256 calculatedPayoutAmountPerPeriod = (amount * payoutRate) / 10000;
+        uint256 payoutPerPeriod = (amount * payoutRate) / 10000;
 
         investors[_user] = Investor({
             deposited: amount,
@@ -135,7 +135,7 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
             lastPayoutTime: block.timestamp,
             totalPayoutsClaimed: 0,
             payoutFrequency: _payoutFrequency,
-            payoutAmountPerPeriod: calculatedPayoutAmountPerPeriod,
+            payoutAmountPerPeriod: payoutPerPeriod,
             totalPayoutBalance: 0, // Will be updated when admin adds payout funds
             emergencyUnlocked: false
         });
@@ -147,10 +147,10 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     function claimPayout() external {
         Investor storage user = investors[msg.sender];
         if (user.deposited == 0) revert NoDeposit();
-        if (user.hasClaimedTokens) revert AlreadyClaimed();
+        if (user.hasClaimedTokens) revert Claimed();
 
         uint256 payoutPeriodSeconds = _getPayoutPeriodSeconds(user.payoutFrequency);
-        if (payoutPeriodSeconds == 0) revert NoPayoutDue();
+        if (payoutPeriodSeconds == 0) revert NoPayout();
 
         uint256 timeElapsed = block.timestamp - user.lastPayoutTime;
         if (timeElapsed < payoutPeriodSeconds) revert PayoutPeriodNotElapsed();
@@ -162,24 +162,24 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
             totalPayoutDue = user.deposited - user.totalPayoutsClaimed;
         }
 
-        if (totalPayoutDue == 0) revert NoPayoutDue();
+        if (totalPayoutDue == 0) revert NoPayout();
 
         user.lastPayoutTime += periodsPassed * payoutPeriodSeconds;
         user.totalPayoutsClaimed += totalPayoutDue;
 
         if (!payoutToken.transfer(msg.sender, totalPayoutDue))
-            revert TokenTransferFailed();
+            revert TransferFailed();
 
         emit IndividualPayoutClaimed(msg.sender, totalPayoutDue);
     }
 
     // Admin adds payout funds and distributes to all investors proportionally
     function addPayoutFunds(uint256 _amount) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
-        if (_amount == 0) revert InvalidAmount();
+        if (_amount == 0) revert InvalidAmt();
         
         // Transfer payout tokens to this contract
         if (!payoutToken.transferFrom(msg.sender, address(this), _amount))
-            revert TokenTransferFailed();
+            revert TransferFailed();
 
         totalPayoutFunds += _amount;
 
@@ -198,7 +198,7 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     function claimTotalPayout() external nonReentrant {
         Investor storage user = investors[msg.sender];
         if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert AlreadyClaimed();
+        if (user.emergencyUnlocked) revert Claimed();
 
         // Calculate user's share of total payout funds
         uint256 userBalance = balanceOf(msg.sender);
@@ -210,12 +210,12 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         // Subtract what user has already claimed
         uint256 availableToClaim = userShare - user.totalPayoutBalance;
         
-        if (availableToClaim == 0) revert NoPayoutDue();
+        if (availableToClaim == 0) revert NoPayout();
 
         user.totalPayoutBalance = userShare;
 
         if (!payoutToken.transfer(msg.sender, availableToClaim))
-            revert TokenTransferFailed();
+            revert TransferFailed();
 
         emit PayoutClaimed(msg.sender, availableToClaim, userShare - availableToClaim);
     }
@@ -251,12 +251,12 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
 
     // User can emergency unlock their tokens before maturity (with penalty)
     function emergencyUnlock() external nonReentrant {
-        if (!emergencyUnlockEnabled) revert EmergencyUnlockNotEnabled();
+        if (!emergencyUnlockEnabled) revert UnlockDisabled();
         
         Investor storage user = investors[msg.sender];
         if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert AlreadyEmergencyUnlocked();
-        if (user.hasClaimedTokens) revert AlreadyClaimed();
+        if (user.emergencyUnlocked) revert AlreadyUnlocked();
+        if (user.hasClaimedTokens) revert Claimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
         if (wrappedBalance == 0) revert NoDeposit();
@@ -273,23 +273,23 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
 
         // Transfer tokens minus penalty
         if (!peggedToken.transfer(msg.sender, amountToReturn))
-            revert TokenTransferFailed();
+            revert TransferFailed();
 
         emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
     }
 
     function claimFinalTokens() external onlyAfterMaturity {
         Investor storage user = investors[msg.sender];
-        if (user.hasClaimedTokens) revert AlreadyClaimed();
+        if (user.hasClaimedTokens) revert Claimed();
         if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert AlreadyClaimed();
+        if (user.emergencyUnlocked) revert Claimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
         _burn(msg.sender, wrappedBalance);
 
         user.hasClaimedTokens = true;
         if (!peggedToken.transfer(msg.sender, user.deposited))
-            revert TokenTransferFailed();
+            revert TransferFailed();
 
         emit FinalTokensClaimed(msg.sender, user.deposited);
     }
@@ -314,7 +314,7 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     }
 
     function transfer(address, uint256) public pure override returns (bool) {
-        revert NoTransfersAllowed();
+        revert NoTransfers();
     }
 
     function transferFrom(
@@ -322,6 +322,6 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         address,
         uint256
     ) public pure override returns (bool) {
-        revert NoTransfersAllowed();
+        revert NoTransfers();
     }
 }

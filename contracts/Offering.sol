@@ -277,16 +277,9 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(value > 0, "Invalid price");
 
         uint8 tokenDecimals = token == address(0)
-            ? 18
-            : IERC20Metadata(token).decimals(); // Assume 18 for native token
+            ? 18 : IERC20Metadata(token).decimals();
 
-        // API3 prices are usually 18 decimals
-        uint8 priceDecimals = 18;
-
-        usdValue =
-            (amount * uint256(int256(value)) * 1e18) /
-            (10 ** tokenDecimals) /
-            (10 ** priceDecimals);
+        usdValue = (amount * uint256(int256(value)) * 1e18) / (10 ** tokenDecimals) / 1e18;
     }
 
     /**
