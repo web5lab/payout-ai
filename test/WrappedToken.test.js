@@ -226,6 +226,7 @@ describe("WRAPEDTOKEN (Unit)", function () {
             await wrappedToken.enableEmergencyUnlock(1000);
             
             const expectedReturn = amount.mul(90).div(100); // 90% after 10% penalty
+            const expectedReturn = amount * 90n / 100n; // 90% after 10% penalty
             
             await expect(wrappedToken.connect(user1).emergencyUnlock())
                 .to.emit(wrappedToken, "EmergencyUnlockUsed")
