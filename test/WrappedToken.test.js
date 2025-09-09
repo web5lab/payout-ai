@@ -226,7 +226,6 @@ describe("WRAPEDTOKEN (Unit)", function () {
             await wrappedToken.enableEmergencyUnlock(1000);
             
             const expectedReturn = amount.mul(90).div(100); // 90% after 10% penalty
-            const expectedReturn = amount * 90n / 100n; // 90% after 10% penalty
             
             await expect(wrappedToken.connect(user1).emergencyUnlock())
                 .to.emit(wrappedToken, "EmergencyUnlockUsed")
@@ -312,8 +311,10 @@ describe("WRAPEDTOKEN (Unit)", function () {
 
             await expect(wrappedToken.connect(user1).claimFinalTokens())
                 .to.emit(wrappedToken, "FinalTokensClaimed")
-                .withArgs(user1.address, amount)
-                .and.to.changeTokenBalances(
+                .withArgs(user1.address, amount);
+            
+            await expect(() => wrappedToken.connect(user1).claimFinalTokens())
+                .to.changeTokenBalances(
                     peggedToken,
                     [wrappedToken, user1],
                     [-amount, amount]
