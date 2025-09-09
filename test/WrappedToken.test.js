@@ -183,16 +183,22 @@ describe("WRAPEDTOKEN (Unit)", function () {
             await wrappedToken.connect(offeringContract).registerInvestment(user1.address, amount, 0);
             
             // First payout round
+            const firstPayoutDate = await wrappedToken.firstPayoutDate();
+            await time.increaseTo(firstPayoutDate + 10);
+            
             const payout1 = ethers.parseUnits("300", 18);
             await payoutToken.connect(payoutAdmin).approve(wrappedToken.target, payout1);
-            await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout1);
-            await wrappedToken.connect(user1).claimTotalPayout();
+            await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout1);
+            await wrappedToken.connect(user1).claimAvailablePayouts();
             
             // Second payout round
+            const payoutPeriodDuration = await wrappedToken.payoutPeriodDuration();
+            await time.increase(payoutPeriodDuration + 10);
+            
             const payout2 = ethers.parseUnits("200", 18);
             await payoutToken.connect(payoutAdmin).approve(wrappedToken.target, payout2);
-            await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout2);
-            await wrappedToken.connect(user1).claimTotalPayout();
+            await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
+            await wrappedToken.connect(user1).claimAvailablePayouts();
             
             expect(await payoutToken.balanceOf(user1.address)).to.equal(payout1 + payout2);
         });
@@ -204,8 +210,46 @@ describe("WRAPEDTOKEN (Unit)", function () {
             await payoutToken.mint(user1.address, payoutAmount);
             await payoutToken.connect(user1).approve(wrappedToken.target, payoutAmount);
             
-            await expect(wrappedToken.connect(user1).addPayoutFunds(payoutAmount))
+            // Fast forward to first payout date
+            const firstPayoutDate = await wrappedToken.firstPayoutDate();
+            await time.increaseTo(firstPayoutDate + 10);
+            
+            await expect(wrappedToken.connect(user1).distributePayoutForPeriod(payoutAmount))
                 .to.be.revertedWithCustomError(wrappedToken, "AccessControlUnauthorizedAccount");
+        });
+
+        it("Should enforce payout period timing", async function () {
+            const { wrappedToken, payoutToken, payoutAdmin } = await loadFixture(deployWrappedTokenFixture);
+            const payoutAmount = ethers.parseUnits("1000", 18);
+            
+            await payoutToken.connect(payoutAdmin).approve(wrappedToken.target, payoutAmount);
+            
+            // Try to distribute before first payout date
+            await expect(wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payoutAmount))
+                .to.be.revertedWithCustomError(wrappedToken, "PayoutNotAvailable");
+        });
+
+        it("Should track payout periods correctly", async function () {
+            const { wrappedToken, payoutToken, payoutAdmin } = await loadFixture(deployWrappedTokenFixture);
+            
+            // Fast forward to first payout date
+            const firstPayoutDate = await wrappedToken.firstPayoutDate();
+            await time.increaseTo(firstPayoutDate + 10);
+            
+            // Check initial period info
+            let periodInfo = await wrappedToken.getCurrentPayoutPeriodInfo();
+            expect(periodInfo.period).to.equal(0);
+            expect(periodInfo.canDistribute).to.be.true;
+            
+            // Distribute first payout
+            const payout1 = ethers.parseUnits("500", 18);
+            await payoutToken.connect(payoutAdmin).approve(wrappedToken.target, payout1);
+            await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout1);
+            
+            // Check updated period info
+            periodInfo = await wrappedToken.getCurrentPayoutPeriodInfo();
+            expect(periodInfo.period).to.equal(1);
+            expect(periodInfo.canDistribute).to.be.false; // Too early for next period
         });
     });
 

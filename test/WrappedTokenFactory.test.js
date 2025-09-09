@@ -18,6 +18,9 @@ describe("WrappedTokenFactory (Unit)", function () {
         const latestTime = await time.latest();
         const maturityDate1 = latestTime + (30 * 24 * 60 * 60); // 30 days
         const maturityDate2 = latestTime + (60 * 24 * 60 * 60); // 60 days
+        const payoutPeriodDuration = 30 * 24 * 60 * 60; // 30 days
+        const firstPayoutDate1 = latestTime + (7 * 24 * 60 * 60); // 7 days
+        const firstPayoutDate2 = latestTime + (14 * 24 * 60 * 60); // 14 days
         
         return {
             factory,
@@ -33,7 +36,10 @@ describe("WrappedTokenFactory (Unit)", function () {
             payoutToken1,
             payoutToken2,
             maturityDate1,
-            maturityDate2
+            maturityDate2,
+            payoutPeriodDuration,
+            firstPayoutDate1,
+            firstPayoutDate2
         };
     }
 
@@ -69,7 +75,9 @@ describe("WrappedTokenFactory (Unit)", function () {
                 maturityDate: maturityDate1,
                 payoutRate: 500, // 5%
                 offeringContract: offeringContract1.address,
-                admin: admin1.address
+                admin: admin1.address,
+                payoutPeriodDuration: payoutPeriodDuration,
+                firstPayoutDate: firstPayoutDate1
             };
 
             await expect(factory.connect(creator1).createWrappedToken(config))
@@ -86,6 +94,8 @@ describe("WrappedTokenFactory (Unit)", function () {
             expect(await wrappedToken.payoutToken()).to.equal(await payoutToken1.getAddress());
             expect(await wrappedToken.maturityDate()).to.equal(maturityDate1);
             expect(await wrappedToken.payoutRate()).to.equal(500);
+            expect(await wrappedToken.payoutPeriodDuration()).to.equal(payoutPeriodDuration);
+            expect(await wrappedToken.firstPayoutDate()).to.equal(firstPayoutDate1);
             expect(await wrappedToken.offeringContract()).to.equal(offeringContract1.address);
         });
 
@@ -140,7 +150,9 @@ describe("WrappedTokenFactory (Unit)", function () {
                 maturityDate: maturityDate1,
                 payoutRate: 500,
                 offeringContract: offeringContract1.address,
-                admin: admin1.address
+                admin: admin1.address,
+                payoutPeriodDuration: payoutPeriodDuration,
+                firstPayoutDate: firstPayoutDate1
             };
 
             await factory.connect(creator1).createWrappedToken(config);
@@ -204,7 +216,9 @@ describe("WrappedTokenFactory (Unit)", function () {
                 maturityDate: maturityDate1,
                 payoutRate: 500,
                 offeringContract: offeringContract1.address,
-                admin: admin1.address
+                admin: admin1.address,
+                payoutPeriodDuration: payoutPeriodDuration,
+                firstPayoutDate: firstPayoutDate1
             };
 
             const config2 = {
@@ -215,7 +229,9 @@ describe("WrappedTokenFactory (Unit)", function () {
                 maturityDate: maturityDate2,
                 payoutRate: 1000,
                 offeringContract: offeringContract2.address,
-                admin: admin2.address
+                admin: admin2.address,
+                payoutPeriodDuration: payoutPeriodDuration,
+                firstPayoutDate: firstPayoutDate2
             };
 
             await factory.connect(creator1).createWrappedToken(config1);

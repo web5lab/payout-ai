@@ -38,6 +38,9 @@ export function handleWrappedTokenDeployed(event: WrappedTokenDeployedEvent): vo
   let totalSupplyResult = wrappedTokenContract.try_totalSupply()
   let totalEscrowedResult = wrappedTokenContract.try_totalEscrowed()
   let totalPayoutFundsResult = wrappedTokenContract.try_totalPayoutFunds()
+  let payoutPeriodDurationResult = wrappedTokenContract.try_payoutPeriodDuration()
+  let firstPayoutDateResult = wrappedTokenContract.try_firstPayoutDate()
+  let currentPayoutPeriodResult = wrappedTokenContract.try_currentPayoutPeriod()
   let emergencyUnlockEnabledResult = wrappedTokenContract.try_emergencyUnlockEnabled()
   let emergencyUnlockPenaltyResult = wrappedTokenContract.try_emergencyUnlockPenalty()
 
@@ -47,6 +50,10 @@ export function handleWrappedTokenDeployed(event: WrappedTokenDeployedEvent): vo
   wrappedToken.payoutToken = payoutTokenResult.reverted ? Bytes.empty() : payoutTokenResult.value
   wrappedToken.maturityDate = maturityDateResult.reverted ? BigInt.fromI32(0) : maturityDateResult.value
   wrappedToken.payoutRate = payoutRateResult.reverted ? BigInt.fromI32(0) : payoutRateResult.value
+  wrappedToken.payoutPeriodDuration = payoutPeriodDurationResult.reverted ? BigInt.fromI32(0) : payoutPeriodDurationResult.value
+  wrappedToken.firstPayoutDate = firstPayoutDateResult.reverted ? BigInt.fromI32(0) : firstPayoutDateResult.value
+  wrappedToken.currentPayoutPeriod = currentPayoutPeriodResult.reverted ? BigInt.fromI32(0) : currentPayoutPeriodResult.value
+  wrappedToken.lastPayoutDistributionTime = BigInt.fromI32(0)
   wrappedToken.offeringContract = event.params.offeringContract
   wrappedToken.totalSupply = totalSupplyResult.reverted ? BigInt.fromI32(0) : totalSupplyResult.value
   wrappedToken.totalEscrowed = totalEscrowedResult.reverted ? BigInt.fromI32(0) : totalEscrowedResult.value

@@ -319,6 +319,7 @@ export function handleTransfer(event: TransferEvent): void {
     
     if (investor) {
       investor.wrappedBalance = investor.wrappedBalance.minus(event.params.value)
+      investor.lastClaimedPeriod = BigInt.fromI32(0) // Initialize to 0
       investor.save()
     }
 

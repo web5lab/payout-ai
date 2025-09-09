@@ -133,6 +133,10 @@ templates:
       eventHandlers:
         - event: PayoutFundsAdded(uint256,uint256)
           handler: handlePayoutFundsAdded
+        - event: PayoutPeriodStarted(indexed uint256,uint256)
+          handler: handlePayoutPeriodStarted
+        - event: PayoutDistributed(indexed uint256,uint256,uint256)
+          handler: handlePayoutDistributed
         - event: PayoutClaimed(indexed address,uint256,uint256)
           handler: handlePayoutClaimed
         - event: IndividualPayoutClaimed(indexed address,uint256)

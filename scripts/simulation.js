@@ -127,7 +127,10 @@ async function main() {
         await payOracle.getAddress(),
         await ethOracle.getAddress(),
         await usdtOracle.getAddress()
-      ]
+      ],
+      maturityDate: timestamps.maturityDate,
+      firstPayoutDate: timestamps.startDate + 1800, // 30 minutes after start
+      payoutPeriodDuration: 2592000 // 30 days in seconds
     };
 
     const tx = await offeringFactory.connect(deployer).createOfferingWithPaymentTokens(offeringConfig);
@@ -200,7 +203,7 @@ async function main() {
 
     // User claims total payout
     console.log("🎁 User claiming total payout...");
-    await wrappedToken.connect(investor1).claimAvailablePayouts();
+    await wrappedToken.connect(investor1).claimTotalPayout();
     
     const userPaymentBalance = await paymentToken.balanceOf(investor1.address);
     console.log(`✅ User claimed payout: ${formatUnits(userPaymentBalance)} PAY tokens`);
