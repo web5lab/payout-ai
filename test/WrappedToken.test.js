@@ -68,17 +68,11 @@ describe("WRAPEDTOKEN (Unit)", function () {
             const WrappedTokenFactory = await ethers.getContractFactory("WRAPEDTOKEN");
             const MockERC20 = await ethers.getContractFactory("MockERC20");
             const payoutToken = await MockERC20.deploy("Payout Token", "PAYOUT");
-            const [owner] = await ethers.getSigners();
             await expect(
                 WrappedTokenFactory.deploy({
-                    name: "Wrapped Token", 
-                    symbol: "wTKN", 
-                    peggedToken: ethers.ZeroAddress, 
-                    payoutToken: payoutToken.target, 
-                    maturityDate: maturityDate, 
-                    payoutRate: 100, 
-                    offeringContract: offeringContract.address,
-                    admin: owner.address
+                    name: "Wrapped Token", symbol: "wTKN", peggedToken: ethers.ZeroAddress, 
+                    payoutToken: payoutToken.target, maturityDate: maturityDate, payoutRate: 100, 
+                    offeringContract: offeringContract.address
                 })
             ).to.be.revertedWithCustomError(WrappedTokenFactory, "InvalidStablecoin");
         });
@@ -323,16 +317,14 @@ describe("WRAPEDTOKEN (Unit)", function () {
 
             await time.increaseTo(maturityDate + 1);
 
-            const tx = wrappedToken.connect(user1).claimFinalTokens();
-            await expect(tx)
+            await expect(wrappedToken.connect(user1).claimFinalTokens())
                 .to.emit(wrappedToken, "FinalTokensClaimed")
-                .withArgs(user1.address, amount);
-            
-            await expect(tx).to.changeTokenBalances(
-                peggedToken,
-                [wrappedToken, user1],
-                [-amount, amount]
-            );
+                .withArgs(user1.address, amount)
+                .and.to.changeTokenBalances(
+                    peggedToken,
+                    [wrappedToken, user1],
+                    [-amount, amount]
+                );
             
             expect(await wrappedToken.balanceOf(user1.address)).to.equal(0);
             
