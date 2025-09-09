@@ -14,16 +14,18 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
   const investmentManager = m.contract("InvestmentManager");
 
   // 4) Deploy the Escrow contract
-  const escrow = m.contract("Escrow", [deployer, factory]);
+  const escrow = m.contract("Escrow", [{ owner: deployer }]);
 
   // 5) Deploy the WrappedToken contract
-  const wrappedToken = m.contract("WRAPEDTOKEN", [
-    "Wrapped Token",
-    "WTOK",
-    mockERC20,
-    thirtyDaysInFuture,
-    factory,
-  ]);
+  const wrappedToken = m.contract("WRAPEDTOKEN", [{
+    name: "Wrapped Token",
+    symbol: "WTOK",
+    peggedToken: mockERC20,
+    payoutToken: mockERC20,
+    maturityDate: thirtyDaysInFuture,
+    payoutRate: 100, // 1% payout rate
+    offeringContract: factory,
+  }]);
 
   // 6) deploy the Payout contract
   const payout = m.contract("Payout", [deployer,deployer]);

@@ -8,7 +8,7 @@ describe("Escrow Contract (Unit)", function () {
         const MockERC20 = await ethers.getContractFactory("MockERC20");
         const paymentToken = await MockERC20.deploy("Payment Token", "PAY");
         const Escrow = await ethers.getContractFactory("Escrow");
-        const escrow = await Escrow.deploy(owner.address); // Corrected: Escrow constructor only takes owner
+        const escrow = await Escrow.deploy({ owner: owner.address });
         return { escrow, owner, offeringContract, investor, treasury, paymentToken, otherAccount };
     }
 
@@ -20,7 +20,7 @@ describe("Escrow Contract (Unit)", function () {
 
         it("Should revert if owner address is zero", async function () {
             const Escrow = await ethers.getContractFactory("Escrow");
-            await expect(Escrow.deploy(ethers.ZeroAddress)).to.be.revertedWithCustomError(Escrow, "OwnableInvalidOwner");
+            await expect(Escrow.deploy({ owner: ethers.ZeroAddress })).to.be.revertedWithCustomError(Escrow, "OwnableInvalidOwner");
         });
     });
 

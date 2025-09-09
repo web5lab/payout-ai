@@ -43,17 +43,47 @@ describe("OfferingFactory (Integrated)", function () {
     describe("createOffering", function () {
         it("Should deploy a full Offering ecosystem and emit event", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
-            const tx = await offeringFactory.createOffering(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
+            const tx = await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
             await expect(tx).to.emit(offeringFactory, "OfferingDeployed").withArgs(0, owner.address, await offeringFactory.getOfferingAddress(0), tokenOwner.address);
         });
 
         it("Should correctly initialize the new Offering contract", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
-            await offeringFactory.createOffering(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
+            await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
             const offeringAddress = await offeringFactory.getOfferingAddress(0);
             const offering = await ethers.getContractAt("Offering", offeringAddress);
             expect(await offering.saleToken()).to.equal(saleToken.target);
@@ -64,9 +94,24 @@ describe("OfferingFactory (Integrated)", function () {
         it("Should revert if called by a non-owner", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
             await expect(
-                offeringFactory.connect(addr1).createOffering(
-                    saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-                )
+                offeringFactory.connect(addr1).createOffering({
+                    saleToken: saleToken.target,
+                    minInvestment: 100,
+                    maxInvestment: 1000,
+                    startDate: startDate,
+                    endDate: endDate,
+                    maturityDate: maturityDate,
+                    autoTransfer: false,
+                    apyEnabled: true,
+                    fundraisingCap: 100000,
+                    tokenPrice: 1,
+                    tokenOwner: tokenOwner.address,
+                    escrowAddress: treasuryOwner.address,
+                    investmentManager: investmentManager.address,
+                    payoutTokenAddress: saleToken.target,
+                    payoutRate: 100,
+                    defaultPayoutFrequency: 0
+                })
             ).to.be.revertedWithCustomError(offeringFactory, "OwnableUnauthorizedAccount");
         });
     });
@@ -76,9 +121,26 @@ describe("OfferingFactory (Integrated)", function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
             const paymentTokens = [paymentToken1.target, paymentToken2.target];
             const oracles = [oracle1.target, oracle2.target];
-            await offeringFactory.createOfferingWithPaymentTokens(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, false, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address, paymentTokens, oracles
-            );
+            await offeringFactory.createOfferingWithPaymentTokens({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: false,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0,
+                paymentTokens: paymentTokens,
+                oracles: oracles
+            });
             const offeringAddress = await offeringFactory.getOfferingAddress(0);
             const offering = await ethers.getContractAt("Offering", offeringAddress);
             expect(await offering.whitelistedPaymentTokens(paymentToken1.target)).to.be.true;
@@ -92,18 +154,52 @@ describe("OfferingFactory (Integrated)", function () {
             const paymentTokens = [paymentToken1.target];
             const oracles = [oracle1.target, oracle2.target];
             await expect(
-                offeringFactory.createOfferingWithPaymentTokens(
-                    saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, false, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address, paymentTokens, oracles
-                )
+                offeringFactory.createOfferingWithPaymentTokens({
+                    saleToken: saleToken.target,
+                    minInvestment: 100,
+                    maxInvestment: 1000,
+                    startDate: startDate,
+                    endDate: endDate,
+                    maturityDate: maturityDate,
+                    autoTransfer: false,
+                    apyEnabled: false,
+                    fundraisingCap: 100000,
+                    tokenPrice: 1,
+                    tokenOwner: tokenOwner.address,
+                    escrowAddress: treasuryOwner.address,
+                    investmentManager: investmentManager.address,
+                    payoutTokenAddress: saleToken.target,
+                    payoutRate: 100,
+                    defaultPayoutFrequency: 0,
+                    paymentTokens: paymentTokens,
+                    oracles: oracles
+                })
             ).to.be.revertedWith("Array length mismatch");
         });
 
         it("Should revert if no payment tokens are provided", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
             await expect(
-                offeringFactory.createOfferingWithPaymentTokens(
-                    saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, false, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address, [], []
-                )
+                offeringFactory.createOfferingWithPaymentTokens({
+                    saleToken: saleToken.target,
+                    minInvestment: 100,
+                    maxInvestment: 1000,
+                    startDate: startDate,
+                    endDate: endDate,
+                    maturityDate: maturityDate,
+                    autoTransfer: false,
+                    apyEnabled: false,
+                    fundraisingCap: 100000,
+                    tokenPrice: 1,
+                    tokenOwner: tokenOwner.address,
+                    escrowAddress: treasuryOwner.address,
+                    investmentManager: investmentManager.address,
+                    payoutTokenAddress: saleToken.target,
+                    payoutRate: 100,
+                    defaultPayoutFrequency: 0,
+                    paymentTokens: [],
+                    oracles: []
+                })
             ).to.be.revertedWith("No payment tokens provided");
         });
     });
@@ -152,21 +248,66 @@ describe("OfferingFactory (Integrated)", function () {
     describe("View Functions", function () {
         it("Should return the correct offering address", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
-            await offeringFactory.createOffering(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
+            await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
             const offeringAddress = await offeringFactory.getOfferingAddress(0);
             expect(offeringAddress).to.not.equal(ethers.ZeroAddress);
         });
 
         it("Should return all offering addresses", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
-            await offeringFactory.createOffering(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
-            await offeringFactory.createOffering(
-                saleToken.target, 200, 2000, startDate, endDate, maturityDate, false, true, 200000, 2, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
+            await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
+            await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 200,
+                maxInvestment: 2000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 200000,
+                tokenPrice: 2,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
             const allOfferings = await offeringFactory.getAllOfferings();
             expect(allOfferings.length).to.equal(2);
             expect(allOfferings[0]).to.equal(await offeringFactory.getOfferingAddress(0));
@@ -175,9 +316,24 @@ describe("OfferingFactory (Integrated)", function () {
 
         it("Should return offering IDs by token owner", async function () {
             const { startDate, endDate, maturityDate } = await getTimestamps(10);
-            await offeringFactory.createOffering(
-                saleToken.target, 100, 1000, startDate, endDate, maturityDate, false, true, 100000, 1, tokenOwner.address, treasuryOwner.address, investmentManager.address
-            );
+            await offeringFactory.createOffering({
+                saleToken: saleToken.target,
+                minInvestment: 100,
+                maxInvestment: 1000,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: false,
+                apyEnabled: true,
+                fundraisingCap: 100000,
+                tokenPrice: 1,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: saleToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            });
             const offeringsByOwner = await offeringFactory.getOfferingIdsByTokenOwner(tokenOwner.address);
             expect(offeringsByOwner.length).to.equal(1);
             expect(offeringsByOwner[0]).to.equal(0);

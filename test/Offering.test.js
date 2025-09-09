@@ -35,24 +35,43 @@ describe("Offering Contract (Integrated)", function () {
         const maturityDate = endDate + (30 * 24 * 60 * 60);
 
         const Escrow = await ethers.getContractFactory("Escrow");
-        const escrow = await Escrow.deploy(treasuryOwner.address, offering.target);
+        const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
 
         let wrappedToken;
         let wrappedTokenAddress = ethers.ZeroAddress;
         if (apyEnabled) {
             const WRAPEDTOKEN = await ethers.getContractFactory("WRAPEDTOKEN");
-            wrappedToken = await WRAPEDTOKEN.deploy("Wrapped Sale", "wSALE", saleToken.target, maturityDate, offering.target);
+            wrappedToken = await WRAPEDTOKEN.deploy({
+                name: "Wrapped Sale",
+                symbol: "wSALE",
+                peggedToken: saleToken.target,
+                payoutToken: saleToken.target,
+                maturityDate: maturityDate,
+                payoutRate: 100,
+                offeringContract: offering.target
+            });
             wrappedTokenAddress = wrappedToken.target;
         }
 
-        await offering.connect(admin).initialize(
-            saleToken.target, MIN_INVESTMENT, MAX_INVESTMENT,
-            startDate, endDate, maturityDate,
-            autoTransfer || false,
-            FUNDRAISING_CAP, TOKEN_PRICE, tokenOwner.address,
-            escrow.target, apyEnabled, wrappedTokenAddress,
-            investmentManager.address
-        );
+        await offering.connect(admin).initialize({
+            saleToken: saleToken.target,
+            minInvestment: MIN_INVESTMENT,
+            maxInvestment: MAX_INVESTMENT,
+            startDate: startDate,
+            endDate: endDate,
+            maturityDate: maturityDate,
+            autoTransfer: autoTransfer || false,
+            fundraisingCap: FUNDRAISING_CAP,
+            tokenPrice: TOKEN_PRICE,
+            tokenOwner: tokenOwner.address,
+            escrowAddress: escrow.target,
+            apyEnabled: apyEnabled,
+            wrappedTokenAddress: wrappedTokenAddress,
+            investmentManager: investmentManager.address,
+            payoutTokenAddress: saleToken.target,
+            payoutRate: 100,
+            defaultPayoutFrequency: 0
+        });
         
         return { escrow, wrappedToken, startDate, endDate, maturityDate };
     }
@@ -84,9 +103,25 @@ describe("Offering Contract (Integrated)", function () {
         it("Should revert with invalid sale token address", async function () {
             const fixture = await loadFixture(deployOfferingEcosystemFixture);
             const { offering, admin, tokenOwner, investmentManager } = fixture;
-            await expect(offering.connect(admin).initialize(
-                ethers.ZeroAddress, MIN_INVESTMENT, MAX_INVESTMENT, 0, 0, 0, false, FUNDRAISING_CAP, TOKEN_PRICE, tokenOwner.address, ethers.ZeroAddress, false, ethers.ZeroAddress, investmentManager.address
-            )).to.be.revertedWith("Invalid sale token");
+            await expect(offering.connect(admin).initialize({
+                saleToken: ethers.ZeroAddress,
+                minInvestment: MIN_INVESTMENT,
+                maxInvestment: MAX_INVESTMENT,
+                startDate: 0,
+                endDate: 0,
+                maturityDate: 0,
+                autoTransfer: false,
+                fundraisingCap: FUNDRAISING_CAP,
+                tokenPrice: TOKEN_PRICE,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: ethers.ZeroAddress,
+                apyEnabled: false,
+                wrappedTokenAddress: ethers.ZeroAddress,
+                investmentManager: investmentManager.address,
+                payoutTokenAddress: ethers.ZeroAddress,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0
+            })).to.be.revertedWith("Invalid sale token");
         });
     });
 

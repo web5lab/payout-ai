@@ -4,6 +4,16 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
+struct WrapedTokenConfig {
+    string name;
+    string symbol;
+    address peggedToken;
+    address payoutToken;
+    uint256 maturityDate;
+    uint256 payoutRate;
+    address offeringContract;
+}
+
 contract WRAPEDTOKEN is ERC20, ERC20Burnable {
     enum PayoutFrequency {
         Daily,
@@ -40,22 +50,14 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable {
     error NoPayoutDue();
     error PayoutPeriodNotElapsed();
 
-    constructor(
-        string memory name,
-        string memory symbol,
-        address _peggedToken,
-        address _payoutToken, // New parameter for payout token
-        uint256 _maturityDate,
-        uint256 _payoutRate, // New parameter for payout rate
-        address _offeringContract
-    ) ERC20(name, symbol) {
-        if (_peggedToken == address(0) || _payoutToken == address(0))
+    constructor(WrapedTokenConfig memory config) ERC20(config.name, config.symbol) {
+        if (config.peggedToken == address(0) || config.payoutToken == address(0))
             revert InvalidStablecoin(); // Renamed error for clarity
-        peggedToken = IERC20(_peggedToken);
-        payoutToken = IERC20(_payoutToken);
-        maturityDate = _maturityDate;
-        payoutRate = _payoutRate;
-        offeringContract = _offeringContract;
+        peggedToken = IERC20(config.peggedToken);
+        payoutToken = IERC20(config.payoutToken);
+        maturityDate = config.maturityDate;
+        payoutRate = config.payoutRate;
+        offeringContract = config.offeringContract;
     }
 
     modifier onlyOfferingContract() {

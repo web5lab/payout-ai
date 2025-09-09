@@ -5,6 +5,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+struct EscrowConfig {
+    address owner;
+}
+
 contract Escrow is Ownable, ReentrancyGuard {
     bool public refundsEnabled;
 
@@ -30,8 +34,8 @@ contract Escrow is Ownable, ReentrancyGuard {
     event RefundsEnabled();
     event Withdrawn(address indexed token, uint256 amount, address indexed to);
 
-    constructor(address _owner) Ownable(_owner) {
-        require(_owner != address(0), "Invalid owner");
+    constructor(EscrowConfig memory config) Ownable(config.owner) {
+        require(config.owner != address(0), "Invalid owner");
     }
 
     // Deposit native ETH

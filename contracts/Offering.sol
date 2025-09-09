@@ -34,6 +34,26 @@ interface IEscrow {
     function refund(address _offeringContract, address _investor) external; // Also update refund to match Escrow.sol
 }
 
+struct InitConfig {
+    address saleToken;
+    uint256 minInvestment;
+    uint256 maxInvestment;
+    uint256 startDate;
+    uint256 endDate;
+    uint256 maturityDate;
+    bool autoTransfer;
+    uint256 fundraisingCap;
+    uint256 tokenPrice;
+    address tokenOwner;
+    address escrowAddress;
+    bool apyEnabled;
+    address wrappedTokenAddress;
+    address investmentManager;
+    address payoutTokenAddress;
+    uint256 payoutRate;
+    IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
+}
+
 contract Offering is AccessControl, Pausable, ReentrancyGuard {
     IERC20 public saleToken;
 
@@ -88,63 +108,45 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         _;
     }
 
-    function initialize(
-        address _saleToken,
-        uint256 _minInvestment,
-        uint256 _maxInvestment,
-        uint256 _startDate,
-        uint256 _endDate,
-        uint256 _maturityDate,
-        bool _autoTransfer,
-        uint256 _fundraisingCap,
-        uint256 _tokenPrice,
-        address _tokenOwner,
-        address _escrowAddress,
-        bool _apyEnabled,
-        address _wrappedTokenAddress,
-        address _investmentManager,
-        address _payoutTokenAddress, // New parameter
-        uint256 _payoutRate, // New parameter
-        IWRAPEDTOKEN.PayoutFrequency _defaultPayoutFrequency // New parameter
-    ) external {
+    function initialize(InitConfig memory config) external {
         require(!initialized, "Already initialized");
 
-        require(_saleToken != address(0), "Invalid sale token");
-        require(_tokenOwner != address(0), "Invalid token owner");
-        require(_escrowAddress != address(0), "Invalid escrow address");
+        require(config.saleToken != address(0), "Invalid sale token");
+        require(config.tokenOwner != address(0), "Invalid token owner");
+        require(config.escrowAddress != address(0), "Invalid escrow address");
         require(
-            _investmentManager != address(0),
+            config.investmentManager != address(0),
             "Invalid investment manager address"
         );
-        require(_fundraisingCap > 0, "Fundraising cap must be positive");
-        require(_tokenPrice > 0, "Token price must be positive");
-        require(_minInvestment <= _maxInvestment, "Min > max investment");
+        require(config.fundraisingCap > 0, "Fundraising cap must be positive");
+        require(config.tokenPrice > 0, "Token price must be positive");
+        require(config.minInvestment <= config.maxInvestment, "Min > max investment");
         require(
-            block.timestamp <= _startDate,
+            block.timestamp <= config.startDate,
             "Start date must be in the future"
         );
-        require(_startDate < _endDate, "Start date must be before end date");
-        require(_payoutTokenAddress != address(0), "Invalid payout token address");
+        require(config.startDate < config.endDate, "Start date must be before end date");
+        require(config.payoutTokenAddress != address(0), "Invalid payout token address");
 
-        saleToken = IERC20(_saleToken);
-        minInvestment = _minInvestment;
-        maxInvestment = _maxInvestment;
-        startDate = _startDate;
-        endDate = _endDate;
-        maturityDate = _maturityDate;
-        autoTransfer = _autoTransfer;
-        fundraisingCap = _fundraisingCap;
-        tokenPrice = _tokenPrice;
-        escrowAddress = _escrowAddress;
-        apyEnabled = _apyEnabled;
-        wrappedTokenAddress = _wrappedTokenAddress;
-        investmentManager = _investmentManager;
-        payoutTokenAddress = _payoutTokenAddress; // Assign new state variable
-        payoutRate = _payoutRate; // Assign new state variable
-        defaultPayoutFrequency = _defaultPayoutFrequency; // Assign new state variable
+        saleToken = IERC20(config.saleToken);
+        minInvestment = config.minInvestment;
+        maxInvestment = config.maxInvestment;
+        startDate = config.startDate;
+        endDate = config.endDate;
+        maturityDate = config.maturityDate;
+        autoTransfer = config.autoTransfer;
+        fundraisingCap = config.fundraisingCap;
+        tokenPrice = config.tokenPrice;
+        escrowAddress = config.escrowAddress;
+        apyEnabled = config.apyEnabled;
+        wrappedTokenAddress = config.wrappedTokenAddress;
+        investmentManager = config.investmentManager;
+        payoutTokenAddress = config.payoutTokenAddress;
+        payoutRate = config.payoutRate;
+        defaultPayoutFrequency = config.defaultPayoutFrequency;
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(TOKEN_OWNER_ROLE, _tokenOwner);
+        _grantRole(TOKEN_OWNER_ROLE, config.tokenOwner);
 
         initialized = true;
     }

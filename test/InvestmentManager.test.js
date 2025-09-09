@@ -45,21 +45,26 @@ describe("InvestmentManager Contract", function () {
         const maturityDate = endDate + (30 * 24 * 60 * 60);
 
         const tx = await offeringFactory.connect(admin).createOfferingWithPaymentTokens(
-            saleToken.target,
-            MIN_INVESTMENT,
-            MAX_INVESTMENT,
-            startDate,
-            endDate,
-            maturityDate,
-            autoTransfer || false,
-            apyEnabled || false,
-            FUNDRAISING_CAP,
-            TOKEN_PRICE,
-            tokenOwner.address,
-            treasuryOwner.address,
-            investmentManager.target, 
-            [paymentToken.target, ethers.ZeroAddress], // Whitelist paymentToken and native ETH
-            [oracle.target, oracle.target] // Oracles for paymentToken and native ETH (using mock oracle for native ETH)
+            {
+                saleToken: saleToken.target,
+                minInvestment: MIN_INVESTMENT,
+                maxInvestment: MAX_INVESTMENT,
+                startDate: startDate,
+                endDate: endDate,
+                maturityDate: maturityDate,
+                autoTransfer: autoTransfer || false,
+                apyEnabled: apyEnabled || false,
+                fundraisingCap: FUNDRAISING_CAP,
+                tokenPrice: TOKEN_PRICE,
+                tokenOwner: tokenOwner.address,
+                escrowAddress: treasuryOwner.address,
+                investmentManager: investmentManager.target,
+                payoutTokenAddress: paymentToken.target,
+                payoutRate: 100,
+                defaultPayoutFrequency: 0, // Daily
+                paymentTokens: [paymentToken.target, ethers.ZeroAddress],
+                oracles: [oracle.target, oracle.target]
+            }
         );
 
         const receipt = await tx.wait();
