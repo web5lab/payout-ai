@@ -48,7 +48,8 @@ describe("Offering Contract (Integrated)", function () {
                 payoutToken: saleToken.target,
                 maturityDate: maturityDate,
                 payoutRate: 100,
-                offeringContract: offering.target
+                offeringContract: offering.target,
+                admin: admin.address
             });
             wrappedTokenAddress = wrappedToken.target;
         }
@@ -226,7 +227,7 @@ describe("Offering Contract (Integrated)", function () {
             await offering.connect(investmentManager).invest(paymentToken.target, investor1.address, paymentAmount);
             
             await time.increaseTo(maturityDate + 1);
-            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.changeTokenBalances(
+            await expect(offering.connect(investmentManager).claimTokens(investor1.address)).to.changeTokenBalances(
                 saleToken,
                 [offering, investor1],
                 [-expectedTokens, expectedTokens]
@@ -235,7 +236,7 @@ describe("Offering Contract (Integrated)", function () {
 
         it("Should revert claiming before maturity", async function () {
             const fixture = await loadFixture(deployOfferingEcosystemFixture);
-            const { offering, admin, investor1, paymentToken, oracle, investmentManager, tokenOwner } = fixture;
+            const { offering, admin, investor1, paymentToken, oracle, investmentManager, tokenOwner, saleToken } = fixture;
             const { startDate } = await initializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             await offering.connect(admin).setWhitelistedPaymentToken(paymentToken.target, true);
@@ -251,7 +252,7 @@ describe("Offering Contract (Integrated)", function () {
             await time.increaseTo(startDate);
             await offering.connect(investmentManager).invest(paymentToken.target, investor1.address, paymentAmount);
             
-            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.be.revertedWith("Maturity not reached");
+            await expect(offering.connect(investmentManager).claimTokens(investor1.address)).to.be.revertedWith("Maturity not reached");
         });
 
         it("Should revert if no tokens to claim", async function () {
@@ -259,7 +260,7 @@ describe("Offering Contract (Integrated)", function () {
             const { offering, investmentManager, investor1 } = fixture;
             const { maturityDate } = await initializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
             await time.increaseTo(maturityDate + 1);
-            await expect(investmentManager.connect(investor1).claimInvestmentTokens(offering.target)).to.be.revertedWith("No tokens to claim");
+            await expect(offering.connect(investmentManager).claimTokens(investor1.address)).to.be.revertedWith("No tokens to claim");
         });
     });
 

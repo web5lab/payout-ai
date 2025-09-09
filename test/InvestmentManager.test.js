@@ -19,8 +19,11 @@ describe("InvestmentManager Contract", function () {
         const price = ethers.parseUnits("2000", 18); // 1 PAY token = 2000 USD (also used for ETH/USD mock)
         const oracle = await MockV3Aggregator.deploy(price, true);
 
+        const WrappedTokenFactory = await ethers.getContractFactory("WrappedTokenFactory");
+        const wrappedTokenFactory = await WrappedTokenFactory.deploy();
+
         const OfferingFactory = await ethers.getContractFactory("OfferingFactory");
-        const offeringFactory = await OfferingFactory.deploy(); // Deploy with admin as owner (msg.sender)
+        const offeringFactory = await OfferingFactory.deploy(wrappedTokenFactory.target);
 
         const InvestmentManager = await ethers.getContractFactory("InvestmentManager");
         const investmentManager = await InvestmentManager.deploy();

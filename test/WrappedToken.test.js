@@ -20,7 +20,8 @@ describe("WRAPEDTOKEN (Unit)", function () {
             payoutToken: payoutToken.target,
             maturityDate: maturityDate,
             payoutRate: payoutRate,
-            offeringContract: offeringContract.address
+            offeringContract: offeringContract.address,
+            admin: owner.address
         });
         
         // Grant payout admin role

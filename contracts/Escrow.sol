@@ -167,4 +167,7 @@ contract Escrow is Ownable, ReentrancyGuard {
 
         emit Withdrawn(tokenAddr, amount, to);
     }
+
+    // Allow contract to receive ETH for testing
+    receive() external payable {}
 }

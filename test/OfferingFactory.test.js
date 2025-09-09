@@ -30,8 +30,11 @@ describe("OfferingFactory (Integrated)", function () {
         oracle1 = await MockV3Aggregator.deploy(price1, true);
         oracle2 = await MockV3Aggregator.deploy(price2, true);
 
+        const WrappedTokenFactory = await ethers.getContractFactory("WrappedTokenFactory");
+        const wrappedTokenFactory = await WrappedTokenFactory.deploy();
+
         OfferingFactory = await ethers.getContractFactory("OfferingFactory");
-        offeringFactory = await OfferingFactory.deploy();
+        offeringFactory = await OfferingFactory.deploy(wrappedTokenFactory.target);
     });
 
     describe("Deployment", function () {

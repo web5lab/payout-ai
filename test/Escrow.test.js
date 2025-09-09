@@ -116,13 +116,14 @@ describe("Escrow Contract (Unit)", function () {
             const depositAmount = ethers.parseEther("1.0");
             await escrow.connect(offeringContract).depositNative(offeringContract.address, investor.address, { value: depositAmount });
             await escrow.connect(owner).enableRefunds();
-            await expect(escrow.connect(owner).refund(offeringContract.address, investor.address))
+            const tx = escrow.connect(owner).refund(offeringContract.address, investor.address);
+            await expect(tx)
                 .to.emit(escrow, "Refunded")
-                .withArgs(offeringContract.address, investor.address, ethers.ZeroAddress, depositAmount)
-                .and.to.changeEtherBalances(
-                    [escrow, investor],
-                    [-depositAmount, depositAmount]
-                );
+                .withArgs(offeringContract.address, investor.address, ethers.ZeroAddress, depositAmount);
+            await expect(tx).to.changeEtherBalances(
+                [escrow, investor],
+                [-depositAmount, depositAmount]
+            );
             const deposit = await escrow.deposits(offeringContract.address, investor.address);
             expect(deposit.amount).to.equal(0);
         });
@@ -134,14 +135,15 @@ describe("Escrow Contract (Unit)", function () {
             await paymentToken.connect(offeringContract).approve(escrow.target, depositAmount);
             await escrow.connect(offeringContract).depositToken(offeringContract.address, investor.address, paymentToken.target, depositAmount);
             await escrow.connect(owner).enableRefunds();
-            await expect(escrow.connect(owner).refund(offeringContract.address, investor.address))
+            const tx = escrow.connect(owner).refund(offeringContract.address, investor.address);
+            await expect(tx)
                 .to.emit(escrow, "Refunded")
-                .withArgs(offeringContract.address, investor.address, paymentToken.target, depositAmount)
-                .and.to.changeTokenBalances(
-                    paymentToken,
-                    [escrow, investor],
-                    [-depositAmount, depositAmount]
-                );
+                .withArgs(offeringContract.address, investor.address, paymentToken.target, depositAmount);
+            await expect(tx).to.changeTokenBalances(
+                paymentToken,
+                [escrow, investor],
+                [-depositAmount, depositAmount]
+            );
             const deposit = await escrow.deposits(offeringContract.address, investor.address);
             expect(deposit.amount).to.equal(0);
         });
