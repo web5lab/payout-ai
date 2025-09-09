@@ -254,14 +254,6 @@ contract WRAPEDTOKEN is
         
         if (availableToClaim == 0) revert NoPayout();
         
-        // Check if contract has enough payout tokens
-        uint256 contractBalance = payoutToken.balanceOf(address(this));
-        if (availableToClaim > contractBalance) {
-            availableToClaim = contractBalance;
-        }
-        
-        if (availableToClaim == 0) revert NoPayout();
-
         user.totalPayoutBalance += availableToClaim;
 
         if (!payoutToken.transfer(msg.sender, availableToClaim))
