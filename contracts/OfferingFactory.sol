@@ -103,17 +103,16 @@ contract OfferingFactory is Ownable {
 
         Offering offering = new Offering();
         if (config.apyEnabled) {
-            wrappedTokenAddress = address(
-                new WRAPEDTOKEN(
-                    "Wrapped Token",
-                    "WRT",
-                    config.saleToken,
-                    config.payoutTokenAddress,
-                    config.maturityDate,
-                    config.payoutRate,
-                    address(offering)
-                )
-            );
+            WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
+                name: "Wrapped Token",
+                symbol: "WRT",
+                peggedToken: config.saleToken,
+                payoutToken: config.payoutTokenAddress,
+                maturityDate: config.maturityDate,
+                payoutRate: config.payoutRate,
+                offeringContract: address(offering)
+            });
+            wrappedTokenAddress = address(new WRAPEDTOKEN(wrappedConfig));
         }
         
         InitConfig memory initConfig = InitConfig({
@@ -173,17 +172,16 @@ contract OfferingFactory is Ownable {
         Offering offering = new Offering();
 
         if (config.apyEnabled) {
-            wrappedTokenAddress = address(
-                new WRAPEDTOKEN(
-                    "Wrapped Token",
-                    "WRT",
-                    config.saleToken,
-                    config.payoutTokenAddress,
-                    config.maturityDate,
-                    config.payoutRate,
-                    address(offering)
-                )
-            );
+            WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
+                name: "Wrapped Token",
+                symbol: "WRT",
+                peggedToken: config.saleToken,
+                payoutToken: config.payoutTokenAddress,
+                maturityDate: config.maturityDate,
+                payoutRate: config.payoutRate,
+                offeringContract: address(offering)
+            });
+            wrappedTokenAddress = address(new WRAPEDTOKEN(wrappedConfig));
         }
         
         InitConfig memory initConfig = InitConfig({
