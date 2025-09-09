@@ -47,6 +47,10 @@ describe("InvestmentManager Contract", function () {
         const endDate = startDate + (10 * 24 * 60 * 60);
         const maturityDate = endDate + (30 * 24 * 60 * 60);
 
+        // Deploy a fresh escrow for this offering
+        const Escrow = await ethers.getContractFactory("Escrow");
+        const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
+
         const tx = await offeringFactory.connect(admin).createOfferingWithPaymentTokens(
             {
                 saleToken: saleToken.target,
@@ -80,7 +84,7 @@ describe("InvestmentManager Contract", function () {
         const offeringAddress = offeringDeployedEvent.args.offeringAddress;
         const offering = await ethers.getContractAt("Offering", offeringAddress); // Get offering instance here
 
-        return { offeringAddress, offering, startDate, endDate, maturityDate };
+        return { offeringAddress, offering, startDate, endDate, maturityDate, escrow };
     }
 
     describe("Deployment and Initialization", function () {
@@ -94,7 +98,7 @@ describe("InvestmentManager Contract", function () {
         it("Should successfully route an ERC20 investment to an offering", async function () {
             const fixture = await loadFixture(deployInvestmentManagerFixture);
             const { investor1, paymentToken, saleToken, investmentManager, tokenOwner } = fixture;
-            const {  offering, startDate } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
+            const { offering, startDate, escrow } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             const paymentAmount = ethers.parseUnits("0.05", 18); // 0.05 PAY tokens = 100 USD (within min/max investment)
             const expectedTokens = ethers.parseUnits("1000", 18); // 100 USD / 0.1 USD/SALE = 1000 SALE
@@ -121,8 +125,7 @@ describe("InvestmentManager Contract", function () {
                 .and.to.emit(offering, "Invested");
 
             // Verify balances
-            const escrowAddress = await offering.escrowAddress();
-            expect(await paymentToken.balanceOf(escrowAddress)).to.equal(paymentAmount);
+            expect(await paymentToken.balanceOf(escrow.target)).to.equal(paymentAmount);
             expect(await offering.totalRaised()).to.equal(ethers.parseUnits("100", 18)); // 100 USD
             expect(await offering.pendingTokens(investor1.address)).to.equal(expectedTokens);
         });
@@ -152,7 +155,7 @@ describe("InvestmentManager Contract", function () {
         it("Should successfully route a native ETH investment to an offering", async function () {
             const fixture = await loadFixture(deployInvestmentManagerFixture);
             const { admin, investor1, saleToken, investmentManager, tokenOwner } = fixture;
-            const { offeringAddress, offering, startDate } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
+            const { offeringAddress, offering, startDate, escrow } = await createAndInitializeOffering(fixture, { apyEnabled: false, autoTransfer: false });
 
             const paymentAmount = ethers.parseUnits("0.1", 18); // 0.1 ETH = 200 USD (assuming 1 ETH = 2000 USD for simplicity in this test context)
             const expectedTokens = ethers.parseUnits("2000", 18); // 200 USD / 0.1 USD/SALE = 2000 SALE
@@ -176,8 +179,7 @@ describe("InvestmentManager Contract", function () {
                 .and.to.emit(offering, "Invested");
 
             // Verify balances
-            const escrowAddress = await offering.escrowAddress();
-            expect(await ethers.provider.getBalance(escrowAddress)).to.equal(paymentAmount);
+            expect(await ethers.provider.getBalance(escrow.target)).to.equal(paymentAmount);
             expect(await offering.totalRaised()).to.equal(ethers.parseUnits("200", 18)); // 200 USD
             expect(await offering.pendingTokens(investor1.address)).to.equal(expectedTokens);
         });

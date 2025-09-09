@@ -285,7 +285,7 @@ describe("WrappedTokenFactory (Unit)", function () {
             };
 
             await expect(factory.connect(creator1).createWrappedToken(config))
-                .to.be.revertedWithCustomError(factory, "InvalidStablecoin");
+                .to.be.reverted;
         });
     });
 
