@@ -119,8 +119,9 @@ async function main() {
     const wrappedTokenAddress = await offering.wrappedTokenAddress();
     const wrappedToken = await ethers.getContractAt("WRAPEDTOKEN", wrappedTokenAddress);
     
-    // Grant payout admin role to payoutAdmin using the correct function
-    await wrappedToken.connect(deployer).grantPayoutAdminRole(payoutAdmin.address);
+    // Grant payout admin role to payoutAdmin using AccessControl
+    const PAYOUT_ADMIN_ROLE = await wrappedToken.PAYOUT_ADMIN_ROLE();
+    await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
     
     // Transfer sale tokens to offering for distribution
     const totalTokensForSale = parseUnits("200000"); // 200k tokens for sale
