@@ -500,7 +500,7 @@ async function main() {
     console.log("📝 Setting up investment for refund scenario...");
     
     // Get fresh escrow balance before investment
-    const initialEscrowBalance = await paymentToken.balanceOf(await freshEscrow.getAddress());
+    const initialEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
     
     await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmountPAY);
     await time.increaseTo(config.startDate + 10);
@@ -513,7 +513,7 @@ async function main() {
     );
 
     // Check escrow balance
-    const finalEscrowBalance = await paymentToken.balanceOf(await freshEscrow.getAddress());
+    const finalEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
     const escrowIncrease = finalEscrowBalance - initialEscrowBalance;
     await assert(escrowIncrease == investAmountPAY,
       `Escrow balance increase mismatch. Expected: ${formatUnits(investAmountPAY)}, Got: ${formatUnits(escrowIncrease)}`);
@@ -521,12 +521,12 @@ async function main() {
 
     // Enable refunds
     console.log("🔄 Treasury owner enabling refunds...");
-    await freshEscrow.connect(treasuryOwner).enableRefunds();
+    await escrow.connect(treasuryOwner).enableRefunds();
     
     const initialInvestorBalance = await paymentToken.balanceOf(investor1.address);
     
     console.log("💸 Processing refund...");
-    await freshEscrow.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
+    await escrow.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
     
     const finalInvestorBalance = await paymentToken.balanceOf(investor1.address);
     const refundAmount = finalInvestorBalance - initialInvestorBalance;
@@ -626,7 +626,7 @@ async function main() {
     console.log("🔐 Testing role management...");
     
     // Grant additional token owner role
-    await offering.connect(deployer).grantRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
+    await offering.connect(deployer).grantTokenOwner(investor1.address);
     const hasRole = await offering.hasRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
     await assert(hasRole, "Failed to grant TOKEN_OWNER_ROLE");
     console.log("✅ Granted TOKEN_OWNER_ROLE to investor1");
