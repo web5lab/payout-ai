@@ -315,6 +315,11 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         _revokeRole(PAYOUT_ADMIN_ROLE, _admin);
     }
 
+    // Grant payout admin role
+    function grantPayoutAdminRole(address _admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(PAYOUT_ADMIN_ROLE, _admin);
+    }
+
     function transfer(address, uint256) public pure override returns (bool) {
         revert NoTransfers();
     }
