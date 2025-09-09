@@ -24,6 +24,9 @@ describe("InvestmentManager Contract", function () {
 
         const OfferingFactory = await ethers.getContractFactory("OfferingFactory");
         const offeringFactory = await OfferingFactory.deploy(wrappedTokenFactory.target);
+        
+        const Escrow = await ethers.getContractFactory("Escrow");
+        const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
 
         const InvestmentManager = await ethers.getContractFactory("InvestmentManager");
         const investmentManager = await InvestmentManager.deploy();
@@ -34,7 +37,7 @@ describe("InvestmentManager Contract", function () {
         return {
             admin, tokenOwner, treasuryOwner, investor1, investor2, otherAccount,
             saleToken, paymentToken, oracle,
-            offeringFactory, investmentManager
+            offeringFactory, investmentManager, wrappedTokenFactory, escrow
         };
     }
 

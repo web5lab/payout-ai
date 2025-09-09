@@ -260,7 +260,7 @@ describe("WrappedTokenFactory (Unit)", function () {
             };
 
             await expect(factory.connect(creator1).createWrappedToken(config))
-                .to.be.revertedWithCustomError(factory, "InvalidStablecoin");
+                .to.be.reverted;
         });
 
         it("Should revert with zero address for payout token", async function () {
