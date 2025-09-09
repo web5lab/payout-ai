@@ -28,6 +28,7 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
   }]);
 
   // 6) deploy the Payout contract
+  const payout = m.contract("Payout", [deployer,deployer]);
 
-  return { factory, investmentManager, escrow, wrappedToken, mockERC20 };
+  return { factory, investmentManager, escrow, wrappedToken, mockERC20, payout };
 });
