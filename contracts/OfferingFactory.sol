@@ -5,6 +5,9 @@ import "./Offering.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./WrapedToken.sol";
 
+// Import the WrapedTokenConfig struct
+import {WrapedTokenConfig} from "./WrapedToken.sol";
+
 struct CreateOfferingConfig {
     address saleToken;
     uint256 minInvestment;
@@ -102,15 +105,13 @@ contract OfferingFactory is Ownable {
         if (config.apyEnabled) {
             wrappedTokenAddress = address(
                 new WRAPEDTOKEN(
-                    WrapedTokenConfig({
-                        name: "Wrapped Token",
-                        symbol: "WRT",
-                        peggedToken: config.saleToken,
-                        payoutToken: config.payoutTokenAddress,
-                        maturityDate: config.maturityDate,
-                        payoutRate: config.payoutRate,
-                        offeringContract: address(offering)
-                    })
+                    "Wrapped Token",
+                    "WRT",
+                    config.saleToken,
+                    config.payoutTokenAddress,
+                    config.maturityDate,
+                    config.payoutRate,
+                    address(offering)
                 )
             );
         }
