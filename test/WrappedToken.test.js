@@ -13,13 +13,18 @@ describe("WRAPEDTOKEN (Unit)", function () {
         const payoutRate = 100; // 1%
         
         const WrappedTokenFactory = await ethers.getContractFactory("WRAPEDTOKEN");
-        const wrappedToken = await WrappedTokenFactory.deploy({
-            name: "Wrapped Token",
-            symbol: "wTKN",
-            peggedToken: peggedToken.target,
-            payoutToken: payoutToken.target,
-            maturityDate: maturityDate,
-            payoutRate: payoutRate,
+        await expect(
+            WrappedTokenFactory.deploy({
+                name: "Wrapped Token", 
+                symbol: "wTKN", 
+                peggedToken: ethers.ZeroAddress, 
+                payoutToken: payoutToken.target, 
+                maturityDate: maturityDate, 
+                payoutRate: 100, 
+                offeringContract: offeringContract.address,
+                admin: admin.address
+            })
+        ).to.be.revertedWithCustomError(WrappedTokenFactory, "InvalidStablecoin");
             offeringContract: offeringContract.address,
             admin: owner.address
         });
