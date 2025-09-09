@@ -242,6 +242,10 @@ contract WRAPEDTOKEN is
             revert TransferFailed();
 
         totalPayoutFunds += _amount;
+        
+        emit PayoutPeriodStarted(currentPayoutPeriod, block.timestamp);
+        emit PayoutDistributed(currentPayoutPeriod, _amount, totalPayoutFunds);
+    }
     // User claims their full available payout balance
     function claimAvailablePayouts() external nonReentrant {
         Investor storage user = investors[msg.sender];
