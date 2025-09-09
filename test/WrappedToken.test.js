@@ -134,8 +134,8 @@ describe("WRAPEDTOKEN (Unit)", function () {
             const amount1 = ethers.parseUnits("600", 18); // 60% of total
             const amount2 = ethers.parseUnits("400", 18); // 40% of total
             
-            await peggedToken.mint(offeringContract.address, amount1.add(amount2));
-            await peggedToken.connect(offeringContract).approve(wrappedToken.target, amount1.add(amount2));
+            await peggedToken.mint(offeringContract.address, amount1 + amount2);
+            await peggedToken.connect(offeringContract).approve(wrappedToken.target, amount1 + amount2);
             
             await wrappedToken.connect(offeringContract).registerInvestment(user1.address, amount1, 0);
             await wrappedToken.connect(offeringContract).registerInvestment(user2.address, amount2, 0);
@@ -194,7 +194,7 @@ describe("WRAPEDTOKEN (Unit)", function () {
             await wrappedToken.connect(payoutAdmin).addPayoutFunds(payout2);
             await wrappedToken.connect(user1).claimTotalPayout();
             
-            expect(await payoutToken.balanceOf(user1.address)).to.equal(payout1.add(payout2));
+            expect(await payoutToken.balanceOf(user1.address)).to.equal(payout1 + payout2);
         });
 
         it("Should revert if non-payout-admin tries to add funds", async function () {
@@ -233,11 +233,11 @@ describe("WRAPEDTOKEN (Unit)", function () {
             // Enable emergency unlock with 10% penalty
             await wrappedToken.enableEmergencyUnlock(1000);
             
-            const expectedReturn = amount.mul(90).div(100); // 90% after 10% penalty
+            const expectedReturn = amount * 90n / 100n; // 90% after 10% penalty
             
             await expect(wrappedToken.connect(user1).emergencyUnlock())
                 .to.emit(wrappedToken, "EmergencyUnlockUsed")
-                .withArgs(user1.address, expectedReturn, amount.sub(expectedReturn));
+                .withArgs(user1.address, expectedReturn, amount - expectedReturn);
             
             expect(await peggedToken.balanceOf(user1.address)).to.equal(expectedReturn);
             expect(await wrappedToken.balanceOf(user1.address)).to.equal(0);
@@ -273,8 +273,8 @@ describe("WRAPEDTOKEN (Unit)", function () {
             const amount1 = ethers.parseUnits("600", 18);
             const amount2 = ethers.parseUnits("400", 18);
             
-            await peggedToken.mint(offeringContract.address, amount1.add(amount2));
-            await peggedToken.connect(offeringContract).approve(wrappedToken.target, amount1.add(amount2));
+            await peggedToken.mint(offeringContract.address, amount1 + amount2);
+            await peggedToken.connect(offeringContract).approve(wrappedToken.target, amount1 + amount2);
             
             await wrappedToken.connect(offeringContract).registerInvestment(user1.address, amount1, 0);
             await wrappedToken.connect(offeringContract).registerInvestment(user2.address, amount2, 0);
