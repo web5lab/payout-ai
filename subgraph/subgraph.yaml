@@ -1,0 +1,30 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: Contract
+    network: lumia-beam
+    source:
+      address: "0x8deB8C63928183f32a0795848B73896eDe517561"
+      abi: Contract
+      startBlock: 3285394
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - InvestmentRouted
+        - OwnershipTransferred
+        - TokensClaimed
+      abis:
+        - name: Contract
+          file: ./abis/Contract.json
+      eventHandlers:
+        - event: InvestmentRouted(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleInvestmentRouted
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
+        - event: TokensClaimed(indexed address,indexed address,uint256)
+          handler: handleTokensClaimed
+      file: ./src/contract.ts

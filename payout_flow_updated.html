@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wrapped Token Payout Flowchart</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 2rem;
+            font-weight: 700;
+        }
+        .flowchart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2.5rem;
+            padding: 2rem 0;
+        }
+        .flow-node {
+            background-color: #e0f2f7;
+            border: 2px solid #007bff;
+            border-radius: 10px;
+            padding: 1.2rem 1.8rem;
+            text-align: center;
+            width: 300px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            font-weight: 600;
+            color: #0056b3;
+            position: relative;
+        }
+        .flow-node.start {
+            background-color: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .flow-node.decision {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+            width: 320px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+        }
+        .flow-node.process {
+            background-color: #e7f5ff;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+        .flow-node.end {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .flow-node:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+        }
+        .arrow {
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 15px solid #6c757d;
+            margin: -0.5rem 0;
+        }
+        .arrow.decision-arrow {
+            border-top-color: #ffc107;
+        }
+        .label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+        .decision-path {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            margin-top: 1rem;
+        }
+        .decision-path .path {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        .decision-path .path.yes {
+            margin-right: 2rem;
+        }
+        .decision-path .path.no {
+            margin-left: 2rem;
+        }
+        .decision-path .path-label {
+            font-weight: 700;
+            color: #495057;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Wrapped Token Payout Distribution Flowchart</h1>
+
+        <div class="flowchart-container">
+            <div class="flow-node start">
+                <strong>Start: User Buys Token from Offering Contract</strong>
+                <p class="label">User acquires tokens from a designated offering contract</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node process">
+                <strong>Register Investment in Wrapped Token Contract</strong>
+                <p class="label">The `WrapedToken` contract records the user's deposited amount and mints wrapped tokens.</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node process">
+                <strong>Original Tokens Locked in Wrapped Token Contract</strong>
+                <p class="label">The user's original deposited tokens are held in the `WrapedToken` contract until the maturity date, preventing transfers.</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node process">
+                <strong>Offering Contract Initializes APY and Payout Period</strong>
+                <p class="label">The offering contract (or owner) initializes the APY and payout period duration in the `WrapedToken` contract during the public offering setup.</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node process">
+                <strong>Offering Contract Deposits Payout Funds</strong>
+                <p class="label">The offering contract (or owner) deposits reward tokens into the `WrapedToken` contract for distribution.</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node decision">
+                <div class="label"><strong>Is Payout Enabled and Due?</strong></div>
+            </div>
+
+            <div class="decision-path">
+                <div class="path no">
+                    <div class="path-label">NO (Not Enabled/Due)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node process">
+                        <strong>Wait for Payout to be Enabled/Due</strong>
+                        <p class="label">Payouts cannot be claimed until enabled by the offering contract and a payout period has passed.</p>
+                    </div>
+                </div>
+                <div class="path yes">
+                    <div class="path-label">YES (Enabled & Due)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node process">
+                        <strong>User Initiates Claim Reward</strong>
+                        <p class="label">User calls `claimReward()` on the `WrapedToken` contract.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="arrow"></div>
+            <div class="arrow"></div>
+
+            <div class="flow-node process">
+                <strong>Wrapped Token Contract Calculates Reward</strong>
+                <p class="label">The `WrapedToken` contract calculates the reward based on the user's deposited amount, APY, and payout period.</p>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node decision">
+                <div class="label"><strong>Are Funds Available and Claim Not Used for Period?</strong></div>
+            </div>
+
+            <div class="decision-path">
+                <div class="path no">
+                    <div class="path-label">NO (Insufficient Funds/Already Claimed)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node end">
+                        <strong>End: Claim Rejected</strong>
+                        <p class="label">Claim is rejected due to insufficient funds in the contract or already claimed for the current period.</p>
+                    </div>
+                </div>
+                <div class="path yes">
+                    <div class="path-label">YES (Funds Available & Not Claimed)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node process">
+                        <strong>Wrapped Token Contract Transfers Reward to User</strong>
+                        <p class="label">The `WrapedToken` contract transfers the calculated reward tokens to the user's wallet.</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="flow-node end">
+                        <strong>End: User Successfully Claims Reward</strong>
+                        <p class="label">The user receives their earned tokens, completing the payout cycle for the period.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node decision">
+                <div class="label"><strong>Is Maturity Date Reached?</strong></div>
+            </div>
+
+            <div class="decision-path">
+                <div class="path no">
+                    <div class="path-label">NO (Not Matured)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node process">
+                        <strong>Continue Earning/Claiming Rewards</strong>
+                        <p class="label">User can continue to earn and claim rewards in subsequent payout periods until maturity.</p>
+                    </div>
+                </div>
+                <div class="path yes">
+                    <div class="path-label">YES (Matured)</div>
+                    <div class="arrow decision-arrow"></div>
+                    <div class="flow-node process">
+                        <strong>User Claims Final Tokens</strong>
+                        <p class="label">User calls `claimFinalTokens()` to burn wrapped tokens and receive original deposited `peggedToken`.</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="flow-node end">
+                        <strong>End: Investment Cycle Complete</strong>
+                        <p class="label">User has claimed all rewards and original investment.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,40 @@
+type InvestmentRouted @entity(immutable: true) {
+  id: Bytes!
+  investor: Bytes! # address
+  offeringAddress: Bytes! # address
+  paymentToken: Bytes! # address
+  paidAmount: BigInt! # uint256
+  tokensReceived: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type TotalInvestment @entity {
+  id: Bytes! # offeringAddress-userAddress
+  offeringAddress: Bytes!
+  userAddress: Bytes!
+  totalInvestment: BigInt!
+  latestInvestmentTimestamp: BigInt!
+  claimableTokens: BigInt!
+  claimedTokens: BigInt!
+}
+
+type TokensClaimed @entity(immutable: true) {
+  id: Bytes!
+  investor: Bytes! # address
+  offeringAddress: Bytes! # address
+  amount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type OwnershipTransferred @entity(immutable: true) {
+  id: Bytes!
+  previousOwner: Bytes! # address
+  newOwner: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
