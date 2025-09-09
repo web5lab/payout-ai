@@ -24,9 +24,6 @@ describe("InvestmentManager Contract", function () {
 
         const OfferingFactory = await ethers.getContractFactory("OfferingFactory");
         const offeringFactory = await OfferingFactory.deploy(wrappedTokenFactory.target);
-        
-        const Escrow = await ethers.getContractFactory("Escrow");
-        const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
 
         const InvestmentManager = await ethers.getContractFactory("InvestmentManager");
         const investmentManager = await InvestmentManager.deploy();
@@ -37,12 +34,12 @@ describe("InvestmentManager Contract", function () {
         return {
             admin, tokenOwner, treasuryOwner, investor1, investor2, otherAccount,
             saleToken, paymentToken, oracle,
-            offeringFactory, investmentManager, wrappedTokenFactory, escrow
+            offeringFactory, investmentManager, wrappedTokenFactory
         };
     }
 
     async function createAndInitializeOffering(fixture, config) {
-        const { admin, tokenOwner, treasuryOwner, saleToken, paymentToken, oracle, offeringFactory,investmentManager } = fixture;
+        const { admin, tokenOwner, treasuryOwner, saleToken, paymentToken, oracle, offeringFactory, investmentManager } = fixture;
         const { apyEnabled, autoTransfer } = config;
 
         const latestTime = await time.latest();
@@ -63,7 +60,7 @@ describe("InvestmentManager Contract", function () {
                 fundraisingCap: FUNDRAISING_CAP,
                 tokenPrice: TOKEN_PRICE,
                 tokenOwner: tokenOwner.address,
-                escrowAddress: treasuryOwner.address,
+                escrowAddress: escrow.target,
                 investmentManager: investmentManager.target,
                 payoutTokenAddress: paymentToken.target,
                 payoutRate: 100,
