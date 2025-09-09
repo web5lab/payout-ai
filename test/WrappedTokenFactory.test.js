@@ -260,7 +260,7 @@ describe("WrappedTokenFactory (Unit)", function () {
             };
 
             await expect(factory.connect(creator1).createWrappedToken(config))
-                .to.be.reverted;
+                .to.be.revertedWithCustomError(factory, "InvalidStablecoin");
         });
 
         it("Should revert with zero address for payout token", async function () {
@@ -412,10 +412,10 @@ describe("WrappedTokenFactory (Unit)", function () {
 
             expect(creator1Tokens.length).to.equal(2);
             expect(creator1Tokens[0]).to.equal(0);
-            expect(creator1Tokens[1]).to.equal(2);
+            expect(creator1Tokens[1]).to.equal(1);
 
             expect(creator2Tokens.length).to.equal(1);
-            expect(creator2Tokens[0]).to.equal(1);
+            expect(creator2Tokens[0]).to.equal(2);
         });
 
         it("Should return all wrapped tokens", async function () {
