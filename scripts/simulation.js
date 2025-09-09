@@ -11,9 +11,9 @@ const formatUnits = (value, decimals = 18) => ethers.formatUnits(value, decimals
 async function getFreshTimestamps() {
   const now = await time.latest();
   return {
-    startDate: now + 200,
-    endDate: now + 200 + 3600, // 1 hour sale
-    maturityDate: now + 200 + 7200 // 2 hours maturity
+    startDate: now + 300,
+    endDate: now + 300 + 3600, // 1 hour sale
+    maturityDate: now + 300 + 7200 // 2 hours maturity
   };
 }
 
@@ -69,27 +69,18 @@ async function main() {
   const Escrow = await ethers.getContractFactory("Escrow");
   const escrow = await Escrow.deploy({ owner: treasuryOwner.address });
 
-  const Payout = await ethers.getContractFactory("Payout");
-  const payout = await Payout.deploy(deployer.address, signer.address);
-
   console.log(`✅ OfferingFactory: ${await offeringFactory.getAddress()}`);
   console.log(`✅ InvestmentManager: ${await investmentManager.getAddress()}`);
   console.log(`✅ Escrow: ${await escrow.getAddress()}`);
-  console.log(`✅ Payout: ${await payout.getAddress()}`);
 
-  // 3. Setup roles and permissions
-  console.log("\n🔐 Setting up roles and permissions...");
-  await payout.connect(deployer).grantPayoutFunderRole(payoutFunder.address);
-  console.log("✅ Granted PAYOUT_FUNDER_ROLE to payoutFunder");
-
-  // 4. Configure USDT in factory
+  // 3. Configure USDT in factory
   await offeringFactory.connect(deployer).setUSDTConfig(
     await usdtToken.getAddress(),
     await usdtOracle.getAddress()
   );
   console.log("✅ Configured USDT in factory");
 
-  // 5. Mint tokens to participants
+  // 4. Mint tokens to participants
   console.log("\n💰 Minting initial tokens...");
   await saleToken.connect(deployer).mint(tokenOwner.address, parseUnits("10000000")); // 10M sale tokens
   await paymentToken.connect(deployer).mint(investor1.address, parseUnits("50000"));
@@ -147,6 +138,10 @@ async function main() {
     if (config.apyEnabled) {
       const wrappedTokenAddress = await offering.wrappedTokenAddress();
       wrappedToken = await ethers.getContractAt("WRAPEDTOKEN", wrappedTokenAddress);
+      
+      // Setup roles for payout functionality
+      await wrappedToken.connect(deployer).grantPayoutFunderRole(payoutFunder.address);
+      await wrappedToken.connect(deployer).grantSignerRole(signer.address);
     }
     
     // Transfer sale tokens to offering for distribution
@@ -172,7 +167,7 @@ async function main() {
 
     console.log("📝 Setting up investment...");
     await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmountPAY);
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400); // Use relative time increase
 
     console.log("💸 Investor 1 investing via InvestmentManager...");
     await investmentManager.connect(investor1).routeInvestment(
@@ -235,7 +230,7 @@ async function main() {
 
     console.log("📝 Setting up investment...");
     await paymentToken.connect(investor2).approve(await offering.getAddress(), investAmountPAY);
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     console.log("💸 Investor 2 investing via InvestmentManager...");
     await investmentManager.connect(investor2).routeInvestment(
@@ -271,7 +266,7 @@ async function main() {
 
     console.log("📝 Setting up investment...");
     await paymentToken.connect(investor3).approve(await offering.getAddress(), investAmountPAY);
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     console.log("💸 Investor 3 investing via InvestmentManager...");
     await investmentManager.connect(investor3).routeInvestment(
@@ -287,7 +282,7 @@ async function main() {
     console.log(`✅ Pending tokens: ${formatUnits(pendingTokens)} SALE tokens`);
 
     console.log("⏰ Fast-forwarding to maturity...");
-    await time.increaseTo(config.maturityDate + 10);
+    await time.increase(7200 + 100); // Go to maturity + buffer
 
     console.log("🎫 Claiming tokens via InvestmentManager...");
     await investmentManager.connect(investor3).claimInvestmentTokens(await offering.getAddress());
@@ -328,16 +323,20 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Create fresh escrow for this scenario
+    const FreshEscrow4 = await ethers.getContractFactory("Escrow");
+    const freshEscrow4 = await FreshEscrow4.deploy({ owner: treasuryOwner.address });
+    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    });
+    }, freshEscrow4);
     
     const investAmountETH = parseUnits("0.1"); // 0.1 ETH = $200 (at $2000/ETH)
     const expectedSaleTokens = parseUnits("400"); // $200 / $0.5 = 400 tokens
 
     console.log("📝 Setting up ETH investment...");
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     console.log("💸 Investor 1 investing ETH via InvestmentManager...");
     await investmentManager.connect(investor1).routeInvestment(
@@ -354,7 +353,7 @@ async function main() {
     console.log(`✅ Tokens received from ETH: ${formatUnits(directBalance)} SALE tokens`);
     
     // Check escrow ETH balance
-    const escrowETHBalance = await ethers.provider.getBalance(await escrow.getAddress());
+    const escrowETHBalance = await ethers.provider.getBalance(await freshEscrow4.getAddress());
     await assert(escrowETHBalance == investAmountETH, 
       `Escrow ETH balance mismatch. Expected: ${formatUnits(investAmountETH)}, Got: ${formatUnits(escrowETHBalance)}`);
     console.log(`✅ ETH secured in escrow: ${formatUnits(escrowETHBalance)} ETH`);
@@ -370,12 +369,16 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Create fresh escrow for this scenario
+    const FreshEscrow5 = await ethers.getContractFactory("Escrow");
+    const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
+    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    });
+    }, freshEscrow5);
     
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     // Investment 1: PAY tokens
     const investAmountPAY = parseUnits("150"); // $150
@@ -388,7 +391,7 @@ async function main() {
       investAmountPAY
     );
 
-    // Investment 2: USDT tokens
+    // Investment 2: USDT tokens (fixed calculation)
     const investAmountUSDT = parseUnits("250", 6); // $250 worth of USDT (USDT has 6 decimals)
     await usdtToken.connect(investor2).approve(await offering.getAddress(), investAmountUSDT);
     
@@ -417,18 +420,43 @@ async function main() {
     console.error("❌ Scenario 5 Failed:", error.message);
   }
 
-  // --- SCENARIO 6: Payout Distribution Flow ---
+  // --- SCENARIO 6: WrapedToken Multi-Payout Distribution Flow ---
   console.log("\n" + "=".repeat(60));
-  console.log("🎯 SCENARIO 6: Payout Distribution Flow");
+  console.log("🎯 SCENARIO 6: WrapedToken Multi-Payout Distribution Flow");
   console.log("=".repeat(60));
   
   try {
-    console.log("💰 Setting up payout distribution...");
+    // Deploy offering with APY to get wrapped token
+    const { offering, wrappedToken } = await deployOffering({ 
+      apyEnabled: true, 
+      autoTransfer: true 
+    });
+    
+    // Make some investments first to have wrapped token holders
+    const investAmount = parseUnits("200");
+    await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmount);
+    await paymentToken.connect(investor2).approve(await offering.getAddress(), investAmount);
+    
+    await time.increase(400);
+    
+    await investmentManager.connect(investor1).routeInvestment(
+      await offering.getAddress(),
+      await paymentToken.getAddress(),
+      investAmount
+    );
+    
+    await investmentManager.connect(investor2).routeInvestment(
+      await offering.getAddress(),
+      await paymentToken.getAddress(),
+      investAmount
+    );
+
+    console.log("💰 Setting up multi-payout distribution...");
     const payoutAmount = parseUnits("10000"); // 10k tokens for distribution
-    await paymentToken.connect(payoutFunder).approve(await payout.getAddress(), payoutAmount);
+    await paymentToken.connect(payoutFunder).approve(await wrappedToken.getAddress(), payoutAmount);
 
     console.log("📋 Creating payout allotment...");
-    const allotTx = await payout.connect(payoutFunder).allotPayout(
+    const allotTx = await wrappedToken.connect(payoutFunder).allotPayout(
       await paymentToken.getAddress(),
       payoutAmount
     );
@@ -448,40 +476,40 @@ async function main() {
     // Generate signatures (simulating off-chain API)
     const messageHash1 = ethers.solidityPackedKeccak256(
       ["uint256", "address", "uint256", "uint256", "address", "uint256"],
-      [payoutId, investor1.address, claimAmount1, claimantNonce1, await payout.getAddress(), payoutNonce]
+      [payoutId, investor1.address, claimAmount1, claimantNonce1, await wrappedToken.getAddress(), payoutNonce]
     );
     const signature1 = await signer.signMessage(ethers.getBytes(messageHash1));
 
     const messageHash2 = ethers.solidityPackedKeccak256(
       ["uint256", "address", "uint256", "uint256", "address", "uint256"],
-      [payoutId, investor2.address, claimAmount2, claimantNonce2, await payout.getAddress(), payoutNonce]
+      [payoutId, investor2.address, claimAmount2, claimantNonce2, await wrappedToken.getAddress(), payoutNonce]
     );
     const signature2 = await signer.signMessage(ethers.getBytes(messageHash2));
 
     console.log("🔏 Generated off-chain signatures");
 
     // Claim payouts
-    console.log("💰 Investor 1 claiming payout...");
-    await payout.connect(investor1).claimPayout(payoutId, claimAmount1, claimantNonce1, signature1);
+    console.log("💰 Investor 1 claiming multi-payout...");
+    await wrappedToken.connect(investor1).claimMultiPayout(payoutId, claimAmount1, claimantNonce1, signature1);
     
-    console.log("💰 Investor 2 claiming payout...");
-    await payout.connect(investor2).claimPayout(payoutId, claimAmount2, claimantNonce2, signature2);
+    console.log("💰 Investor 2 claiming multi-payout...");
+    await wrappedToken.connect(investor2).claimMultiPayout(payoutId, claimAmount2, claimantNonce2, signature2);
 
     // Verify claims
     const investor1PayoutBalance = await paymentToken.balanceOf(investor1.address);
     const investor2PayoutBalance = await paymentToken.balanceOf(investor2.address);
     
-    console.log(`✅ Investor 1 payout balance: ${formatUnits(investor1PayoutBalance)} PAY`);
-    console.log(`✅ Investor 2 payout balance: ${formatUnits(investor2PayoutBalance)} PAY`);
+    console.log(`✅ Investor 1 multi-payout balance: ${formatUnits(investor1PayoutBalance)} PAY`);
+    console.log(`✅ Investor 2 multi-payout balance: ${formatUnits(investor2PayoutBalance)} PAY`);
 
     // Check remaining payout amount
-    const remainingAmount = await payout.getRemainingAmount(payoutId);
+    const remainingAmount = await wrappedToken.getRemainingAmount(payoutId);
     const expectedRemaining = payoutAmount - claimAmount1 - claimAmount2;
     await assert(remainingAmount == expectedRemaining,
       `Remaining amount mismatch. Expected: ${formatUnits(expectedRemaining)}, Got: ${formatUnits(remainingAmount)}`);
     console.log(`✅ Remaining payout: ${formatUnits(remainingAmount)} PAY`);
 
-    console.log("🎉 Scenario 6 Passed - Payout Distribution");
+    console.log("🎉 Scenario 6 Passed - WrapedToken Multi-Payout Distribution");
   } catch (error) {
     console.error("❌ Scenario 6 Failed:", error.message);
   }
@@ -492,20 +520,24 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Create fresh escrow for this scenario
+    const FreshEscrow7 = await ethers.getContractFactory("Escrow");
+    const freshEscrow7 = await FreshEscrow7.deploy({ owner: treasuryOwner.address });
+    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: false 
-    });
+    }, freshEscrow7);
     
     const investAmountPAY = parseUnits("400"); // $400 investment
 
     console.log("📝 Setting up investment for refund scenario...");
     
     // Get fresh escrow balance before investment
-    const initialEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
+    const initialEscrowBalance = await paymentToken.balanceOf(await freshEscrow7.getAddress());
     
     await paymentToken.connect(investor1).approve(await offering.getAddress(), investAmountPAY);
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     console.log("💸 Investor 1 investing...");
     await investmentManager.connect(investor1).routeInvestment(
@@ -514,8 +546,8 @@ async function main() {
       investAmountPAY
     );
 
-    // Check escrow balance
-    const finalEscrowBalance = await paymentToken.balanceOf(await escrow.getAddress());
+    // Check escrow balance increase
+    const finalEscrowBalance = await paymentToken.balanceOf(await freshEscrow7.getAddress());
     const escrowIncrease = finalEscrowBalance - initialEscrowBalance;
     await assert(escrowIncrease == investAmountPAY,
       `Escrow balance increase mismatch. Expected: ${formatUnits(investAmountPAY)}, Got: ${formatUnits(escrowIncrease)}`);
@@ -523,12 +555,12 @@ async function main() {
 
     // Enable refunds
     console.log("🔄 Treasury owner enabling refunds...");
-    await escrow.connect(treasuryOwner).enableRefunds();
+    await freshEscrow7.connect(treasuryOwner).enableRefunds();
     
     const initialInvestorBalance = await paymentToken.balanceOf(investor1.address);
     
     console.log("💸 Processing refund...");
-    await escrow.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
+    await freshEscrow7.connect(treasuryOwner).refund(await offering.getAddress(), investor1.address);
     
     const finalInvestorBalance = await paymentToken.balanceOf(investor1.address);
     const refundAmount = finalInvestorBalance - initialInvestorBalance;
@@ -548,12 +580,16 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Create fresh escrow for this scenario
+    const FreshEscrow8 = await ethers.getContractFactory("Escrow");
+    const freshEscrow8 = await FreshEscrow8.deploy({ owner: treasuryOwner.address });
+    
     const { offering, config } = await deployOffering({ 
       apyEnabled: false, 
       autoTransfer: true 
-    });
+    }, freshEscrow8);
     
-    await time.increaseTo(config.startDate + 10);
+    await time.increase(400);
 
     // Test minimum investment validation
     console.log("🔍 Testing minimum investment validation...");
@@ -620,7 +656,7 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
-    // Deploy fresh escrow for this scenario
+    // Create fresh escrow for this scenario
     const FreshEscrow9 = await ethers.getContractFactory("Escrow");
     const freshEscrow9 = await FreshEscrow9.deploy({ owner: treasuryOwner.address });
     
@@ -632,7 +668,7 @@ async function main() {
     console.log("🔐 Testing role management...");
     
     // Grant additional token owner role
-    await offering.connect(deployer).grantRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
+    await offering.connect(deployer).grantTokenOwner(investor1.address);
     const hasRole = await offering.hasRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
     await assert(hasRole, "Failed to grant TOKEN_OWNER_ROLE");
     console.log("✅ Granted TOKEN_OWNER_ROLE to investor1");
@@ -679,9 +715,9 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
-    // Deploy fresh escrow for this scenario
-    const FreshEscrow5 = await ethers.getContractFactory("Escrow");
-    const freshEscrow5 = await FreshEscrow5.deploy({ owner: treasuryOwner.address });
+    // Create fresh escrow for this scenario
+    const FreshEscrow10 = await ethers.getContractFactory("Escrow");
+    const freshEscrow10 = await FreshEscrow10.deploy({ owner: treasuryOwner.address });
     
     // Create offering with smaller cap for testing
     const timestamps = await getFreshTimestamps();
@@ -697,7 +733,7 @@ async function main() {
       fundraisingCap: parseUnits("1000"), // Small $1000 cap
       tokenPrice: parseUnits("0.5"),
       tokenOwner: tokenOwner.address,
-      escrowAddress: await freshEscrow5.getAddress(),
+      escrowAddress: await freshEscrow10.getAddress(),
       investmentManager: await investmentManager.getAddress(),
       payoutTokenAddress: await paymentToken.getAddress(),
       payoutRate: 1000,
@@ -715,7 +751,7 @@ async function main() {
     // Transfer sale tokens
     await saleToken.connect(tokenOwner).transfer(offeringAddress, parseUnits("10000"));
 
-    await time.increaseTo(smallCapConfig.startDate + 10);
+    await time.increase(400);
 
     // Investment that reaches the cap
     const capReachingAmount = parseUnits("1000"); // $1000 - exactly the cap
@@ -768,7 +804,7 @@ async function main() {
   console.log("✅ Scenario 3: APY Enabled + Manual Claim");
   console.log("✅ Scenario 4: Native ETH Investment");
   console.log("✅ Scenario 5: Multi-Token Investment");
-  console.log("✅ Scenario 6: Payout Distribution Flow");
+  console.log("✅ Scenario 6: WrapedToken Multi-Payout Distribution");
   console.log("✅ Scenario 7: Escrow and Refund Flow");
   console.log("✅ Scenario 8: Investment Limits Validation");
   console.log("✅ Scenario 9: Admin Functions");
@@ -776,6 +812,7 @@ async function main() {
   
   console.log("\n🎉 All scenarios completed successfully!");
   console.log("💡 The offering ecosystem is working as expected across all flows.");
+  console.log("🔗 Payout functionality is now integrated into WrapedToken contract.");
 }
 
 main().catch((error) => {
