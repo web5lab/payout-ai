@@ -17,7 +17,8 @@ export function handleInvestmentRouted(event: InvestmentRoutedEvent): void {
     event.transaction.hash.concatI32(event.logIndex.toI32())
   )
   entity.investor = event.params.investor
-  entity.offeringAddress = event.params.offeringAddress
+  entity.offering = event.params.offeringAddress
+  entity.offeringAddress = event.params.offeringAddress // backwards compatibility
   entity.paymentToken = event.params.paymentToken
   entity.paidAmount = event.params.paidAmount
   entity.tokensReceived = event.params.tokensReceived

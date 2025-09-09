@@ -67,6 +67,11 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   payoutClaim.claimedAt = event.block.timestamp
   payoutClaim.claimedBlock = event.block.number
   payoutClaim.transactionHash = event.transaction.hash
+  
+  // Set reference to user summary for derived field
+  let summaryId = event.address.toHexString() + "-" + event.params.user.toHexString()
+  payoutClaim.userSummary = Bytes.fromUTF8(summaryId)
+  
   payoutClaim.save()
 
   // Update or create user payout summary

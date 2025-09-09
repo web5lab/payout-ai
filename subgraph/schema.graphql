@@ -2,7 +2,8 @@
 type InvestmentRouted @entity(immutable: true) {
   id: Bytes!
   investor: Bytes! # address
-  offeringAddress: Bytes! # address
+  offering: Offering! # reference to offering entity
+  offeringAddress: Bytes! # address for backwards compatibility
   paymentToken: Bytes! # address
   paidAmount: BigInt! # uint256
   tokensReceived: BigInt! # uint256
@@ -55,7 +56,7 @@ type Offering @entity {
   isActive: Boolean!
   createdAt: BigInt!
   createdBlock: BigInt!
-  investments: [InvestmentRouted!]! @derivedFrom(field: "offeringAddress")
+  investments: [InvestmentRouted!]! @derivedFrom(field: "offering")
   totalInvestors: BigInt!
 }
 
@@ -114,7 +115,8 @@ type PayoutClaim @entity(immutable: true) {
   id: Bytes! # transactionHash-logIndex
   payoutRound: PayoutRound
   wrappedToken: WrappedToken!
-  user: Bytes!
+  user: Bytes! # address
+  userSummary: UserPayoutSummary # reference to user summary
   amount: BigInt!
   remainingBalance: BigInt!
   claimedAt: BigInt!
@@ -131,7 +133,7 @@ type UserPayoutSummary @entity {
   currentClaimableAmount: BigInt!
   lastClaimTimestamp: BigInt!
   claimCount: BigInt!
-  claims: [PayoutClaim!]! @derivedFrom(field: "user")
+  claims: [PayoutClaim!]! @derivedFrom(field: "userSummary")
 }
 
 # Emergency Unlock Entities
