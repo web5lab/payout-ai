@@ -387,7 +387,7 @@ async function main() {
     );
 
     // Investment 2: USDT tokens
-    const investAmountUSDT = parseUnits("250000", 6); // $250 worth of USDT (USDT has 6 decimals, so 250000 USDT = $250k)
+    const investAmountUSDT = parseUnits("250", 6); // $250 worth of USDT (USDT has 6 decimals)
     await usdtToken.connect(investor2).approve(await offering.getAddress(), investAmountUSDT);
     
     console.log("💸 Investor 2 investing USDT tokens...");
@@ -399,7 +399,7 @@ async function main() {
 
     // Check total raised
     const totalRaised = await offering.totalRaised();
-    const expectedTotal = parseUnits("250150"); // $150 + $250k = $250,150
+    const expectedTotal = parseUnits("400"); // $150 + $250 = $400
     await assert(totalRaised == expectedTotal, 
       `Total raised mismatch. Expected: ${formatUnits(expectedTotal)}, Got: ${formatUnits(totalRaised)}`);
     console.log(`✅ Total raised: $${formatUnits(totalRaised)}`);
