@@ -34,6 +34,10 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     uint256 public totalEscrowed;
     address public immutable offeringContract;
 
+    // Emergency unlock settings
+    bool public emergencyUnlockEnabled;
+    uint256 public emergencyUnlockPenalty; // Penalty percentage (e.g., 1000 = 10%)
+
     struct Investor {
         uint256 deposited;
         bool hasClaimedTokens;
@@ -41,21 +45,12 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         uint256 totalPayoutsClaimed;
         PayoutFrequency payoutFrequency;
         uint256 payoutAmountPerPeriod; // Amount to be paid out per period
-    }
-
-    // Multi-payout system
-    struct PayoutRound {
-        uint256 totalAmount;
-        uint256 claimedAmount;
-        uint256 roundNumber;
-        bool isActive;
-        mapping(address => uint256) claimedByUser;
+        uint256 totalPayoutBalance; // Total payout balance available to claim
+        bool emergencyUnlocked; // Track if user used emergency unlock
     }
 
     mapping(address => Investor) public investors;
-    mapping(uint256 => PayoutRound) public payoutRounds;
-    uint256 public currentRoundNumber;
-    uint256 public totalPayoutFunds;
+    uint256 public totalPayoutFunds; // Total payout funds available in contract
 
     error NoTransfersAllowed();
     error InvalidAmount();
@@ -67,13 +62,17 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
     error TokenTransferFailed();
     error NoPayoutDue();
     error PayoutPeriodNotElapsed();
-    error PayoutRoundNotActive();
     error InsufficientPayoutFunds();
+    error EmergencyUnlockNotEnabled();
+    error AlreadyEmergencyUnlocked();
+    error InvalidPenalty();
 
-    event PayoutRoundCreated(uint256 indexed roundNumber, uint256 totalAmount);
-    event PayoutClaimed(address indexed user, uint256 indexed roundNumber, uint256 amount);
+    event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
+    event PayoutClaimed(address indexed user, uint256 amount, uint256 remainingBalance);
     event IndividualPayoutClaimed(address indexed user, uint256 amount);
     event FinalTokensClaimed(address indexed user, uint256 amount);
+    event EmergencyUnlockEnabled(uint256 penalty);
+    event EmergencyUnlockUsed(address indexed user, uint256 amount, uint256 penalty);
 
     constructor(WrapedTokenConfig memory config) ERC20(config.name, config.symbol) {
         if (config.peggedToken == address(0) || config.payoutToken == address(0))
@@ -136,7 +135,9 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
             lastPayoutTime: block.timestamp,
             totalPayoutsClaimed: 0,
             payoutFrequency: _payoutFrequency,
-            payoutAmountPerPeriod: calculatedPayoutAmountPerPeriod
+            payoutAmountPerPeriod: calculatedPayoutAmountPerPeriod,
+            totalPayoutBalance: 0, // Will be updated when admin adds payout funds
+            emergencyUnlocked: false
         });
 
         totalEscrowed += amount;
@@ -172,67 +173,116 @@ contract WRAPEDTOKEN is ERC20, ERC20Burnable, AccessControl, Pausable, Reentranc
         emit IndividualPayoutClaimed(msg.sender, totalPayoutDue);
     }
 
-    // Admin creates a new payout round
-    function createPayoutRound(uint256 _totalAmount) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
-        if (_totalAmount == 0) revert InvalidAmount();
+    // Admin adds payout funds and distributes to all investors proportionally
+    function addPayoutFunds(uint256 _amount) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
+        if (_amount == 0) revert InvalidAmount();
         
         // Transfer payout tokens to this contract
-        if (!payoutToken.transferFrom(msg.sender, address(this), _totalAmount))
+        if (!payoutToken.transferFrom(msg.sender, address(this), _amount))
             revert TokenTransferFailed();
 
-        currentRoundNumber++;
-        PayoutRound storage newRound = payoutRounds[currentRoundNumber];
-        newRound.totalAmount = _totalAmount;
-        newRound.claimedAmount = 0;
-        newRound.roundNumber = currentRoundNumber;
-        newRound.isActive = true;
+        totalPayoutFunds += _amount;
 
-        totalPayoutFunds += _totalAmount;
+        // Distribute proportionally to all investors based on their wrapped token balance
+        uint256 totalSupply = totalSupply();
+        if (totalSupply > 0) {
+            // Update each investor's payout balance proportionally
+            // Note: In practice, you might want to iterate through a list of investors
+            // For now, the balance is updated when users claim
+        }
 
-        emit PayoutRoundCreated(currentRoundNumber, _totalAmount);
+        emit PayoutFundsAdded(_amount, totalPayoutFunds);
     }
 
-    // User claims from a specific payout round
-    function claimFromPayoutRound(uint256 _roundNumber, uint256 _claimAmount) external nonReentrant {
-        PayoutRound storage round = payoutRounds[_roundNumber];
+    // User claims their full available payout balance
+    function claimTotalPayout() external nonReentrant {
+        Investor storage user = investors[msg.sender];
+        if (user.deposited == 0) revert NoDeposit();
+        if (user.emergencyUnlocked) revert AlreadyClaimed();
+
+        // Calculate user's share of total payout funds
+        uint256 userBalance = balanceOf(msg.sender);
+        if (userBalance == 0) revert NoDeposit();
+
+        uint256 totalSupply = totalSupply();
+        uint256 userShare = (totalPayoutFunds * userBalance) / totalSupply;
         
-        if (!round.isActive) revert PayoutRoundNotActive();
-        if (round.claimedByUser[msg.sender] > 0) revert AlreadyClaimed();
-        if (_claimAmount == 0) revert InvalidAmount();
-        if (round.claimedAmount + _claimAmount > round.totalAmount) revert InsufficientPayoutFunds();
+        // Subtract what user has already claimed
+        uint256 availableToClaim = userShare - user.totalPayoutBalance;
+        
+        if (availableToClaim == 0) revert NoPayoutDue();
 
-        // Check if user has wrapped tokens (is an investor)
-        if (balanceOf(msg.sender) == 0) revert NoDeposit();
+        user.totalPayoutBalance = userShare;
 
-        round.claimedAmount += _claimAmount;
-        round.claimedByUser[msg.sender] = _claimAmount;
-
-        if (!payoutToken.transfer(msg.sender, _claimAmount))
+        if (!payoutToken.transfer(msg.sender, availableToClaim))
             revert TokenTransferFailed();
 
-        emit PayoutClaimed(msg.sender, _roundNumber, _claimAmount);
+        emit PayoutClaimed(msg.sender, availableToClaim, userShare - availableToClaim);
     }
 
-    // Get user's claim status for a round
-    function getUserClaimForRound(uint256 _roundNumber, address _user) external view returns (uint256) {
-        return payoutRounds[_roundNumber].claimedByUser[_user];
+    // Get user's total available payout balance
+    function getUserPayoutBalance(address _user) external view returns (uint256 totalAvailable, uint256 claimed, uint256 claimable) {
+        Investor storage user = investors[_user];
+        if (user.deposited == 0) return (0, 0, 0);
+
+        uint256 userBalance = balanceOf(_user);
+        if (userBalance == 0) return (0, 0, 0);
+
+        uint256 totalSupply = totalSupply();
+        if (totalSupply == 0) return (0, 0, 0);
+
+        totalAvailable = (totalPayoutFunds * userBalance) / totalSupply;
+        claimed = user.totalPayoutBalance;
+        claimable = totalAvailable > claimed ? totalAvailable - claimed : 0;
     }
 
-    // Get remaining amount in a payout round
-    function getRemainingAmountInRound(uint256 _roundNumber) external view returns (uint256) {
-        PayoutRound storage round = payoutRounds[_roundNumber];
-        return round.totalAmount - round.claimedAmount;
+    // Emergency unlock feature - allows users to unlock tokens before maturity with penalty
+    function enableEmergencyUnlock(uint256 _penaltyPercentage) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_penaltyPercentage > 5000) revert InvalidPenalty(); // Max 50% penalty
+        emergencyUnlockEnabled = true;
+        emergencyUnlockPenalty = _penaltyPercentage;
+        emit EmergencyUnlockEnabled(_penaltyPercentage);
     }
 
-    // Admin can deactivate a payout round
-    function deactivatePayoutRound(uint256 _roundNumber) external onlyRole(PAYOUT_ADMIN_ROLE) {
-        payoutRounds[_roundNumber].isActive = false;
+    function disableEmergencyUnlock() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emergencyUnlockEnabled = false;
+        emergencyUnlockPenalty = 0;
+    }
+
+    // User can emergency unlock their tokens before maturity (with penalty)
+    function emergencyUnlock() external nonReentrant {
+        if (!emergencyUnlockEnabled) revert EmergencyUnlockNotEnabled();
+        
+        Investor storage user = investors[msg.sender];
+        if (user.deposited == 0) revert NoDeposit();
+        if (user.emergencyUnlocked) revert AlreadyEmergencyUnlocked();
+        if (user.hasClaimedTokens) revert AlreadyClaimed();
+
+        uint256 wrappedBalance = balanceOf(msg.sender);
+        if (wrappedBalance == 0) revert NoDeposit();
+
+        // Calculate penalty
+        uint256 penaltyAmount = (user.deposited * emergencyUnlockPenalty) / 10000;
+        uint256 amountToReturn = user.deposited - penaltyAmount;
+
+        // Burn wrapped tokens
+        _burn(msg.sender, wrappedBalance);
+
+        // Mark as emergency unlocked
+        user.emergencyUnlocked = true;
+
+        // Transfer tokens minus penalty
+        if (!peggedToken.transfer(msg.sender, amountToReturn))
+            revert TokenTransferFailed();
+
+        emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
     }
 
     function claimFinalTokens() external onlyAfterMaturity {
         Investor storage user = investors[msg.sender];
         if (user.hasClaimedTokens) revert AlreadyClaimed();
         if (user.deposited == 0) revert NoDeposit();
+        if (user.emergencyUnlocked) revert AlreadyClaimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
         _burn(msg.sender, wrappedBalance);
