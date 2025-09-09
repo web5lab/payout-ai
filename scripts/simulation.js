@@ -626,7 +626,7 @@ async function main() {
     console.log("🔐 Testing role management...");
     
     // Grant additional token owner role
-    await offering.connect(deployer).grantTokenOwner(investor1.address);
+    await offering.connect(deployer).grantRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
     const hasRole = await offering.hasRole(await offering.TOKEN_OWNER_ROLE(), investor1.address);
     await assert(hasRole, "Failed to grant TOKEN_OWNER_ROLE");
     console.log("✅ Granted TOKEN_OWNER_ROLE to investor1");
@@ -673,6 +673,10 @@ async function main() {
   console.log("=".repeat(60));
   
   try {
+    // Deploy fresh escrow for this scenario
+    const FreshEscrow = await ethers.getContractFactory("Escrow");
+    const freshEscrow = await FreshEscrow.deploy({ owner: treasuryOwner.address });
+    
     // Create offering with smaller cap for testing
     const timestamps = await getFreshTimestamps();
     const smallCapConfig = {
@@ -687,7 +691,7 @@ async function main() {
       fundraisingCap: parseUnits("1000"), // Small $1000 cap
       tokenPrice: parseUnits("0.5"),
       tokenOwner: tokenOwner.address,
-      escrowAddress: await escrow.getAddress(),
+      escrowAddress: await freshEscrow.getAddress(),
       investmentManager: await investmentManager.getAddress(),
       payoutTokenAddress: await paymentToken.getAddress(),
       payoutRate: 1000,
