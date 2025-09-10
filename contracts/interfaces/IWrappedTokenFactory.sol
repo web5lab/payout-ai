@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {WrapedTokenConfig} from "../WrapedToken.sol";
+import {WrappedTokenConfig} from "../structs/WrappedTokenConfig.sol";
 
 interface IWrappedTokenFactory {
     function createWrappedToken(
-        WrapedTokenConfig memory config
+        WrappedTokenConfig memory config
     ) external returns (address wrappedTokenAddress);
 
     function getWrappedTokenAddress(

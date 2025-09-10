@@ -14,7 +14,7 @@
     "@graphprotocol/graph-cli": "^0.64.0",
     "@nomicfoundation/hardhat-toolbox": "^6.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.14",
-    "hardhat": "^3.0.1"
+    "hardhat": "^2.26.0"
   },
   "dependencies": {
     "@api3/contracts": "^26.2.1",

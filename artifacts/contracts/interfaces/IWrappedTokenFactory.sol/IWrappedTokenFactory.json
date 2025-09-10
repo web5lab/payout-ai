@@ -34,7 +34,7 @@
             },
             {
               "internalType": "uint256",
-              "name": "payoutRate",
+              "name": "payoutAPR",
               "type": "uint256"
             },
             {
@@ -46,9 +46,14 @@
               "internalType": "address",
               "name": "admin",
               "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "payoutPeriodDuration",
+              "type": "uint256"
             }
           ],
-          "internalType": "struct WrapedTokenConfig",
+          "internalType": "struct WrappedTokenConfig",
           "name": "config",
           "type": "tuple"
         }

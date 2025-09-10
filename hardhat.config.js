@@ -1,9 +1,9 @@
-require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+import "@nomicfoundation/hardhat-toolbox";
+import "dotenv/config"; // dotenv/config automatically loads .env variables
 
 const PRIVATE_KEY = process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [];
 
-module.exports = {
+export default {
   solidity: {
     version: "0.8.20",
     settings: {

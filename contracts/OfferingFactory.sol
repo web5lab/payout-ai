@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./interfaces/IWrappedTokenFactory.sol";
 
 // Import the WrapedTokenConfig struct
-import {WrapedTokenConfig} from "./WrapedToken.sol";
+import {WrappedTokenConfig} from "./structs/WrappedTokenConfig.sol";
 
 struct CreateOfferingConfig {
     address saleToken;
@@ -24,9 +24,7 @@ struct CreateOfferingConfig {
     address investmentManager;
     address payoutTokenAddress;
     uint256 payoutRate;
-    uint256 payoutPeriodDuration; // Duration between payouts (e.g., 30 days = 2592000 seconds)
-    string customWrappedName;
-    string customWrappedSymbol;
+    uint256 payoutPeriodDuration;
     uint256 maturityDate;
 }
 
@@ -91,40 +89,23 @@ contract OfferingFactory is Ownable {
         emit USDTConfigUpdated(_usdtAddress, _usdtOracleAddress);
     }
 
-    /**
-     * @dev Generate wrapped token name and symbol based on the sale token
-     * @param saleToken Address of the sale token
-     * @param customName Custom name (if empty, will generate from token name)
-     * @param customSymbol Custom symbol (if empty, will generate from token symbol)
-     * @return name The generated or custom name
-     * @return symbol The generated or custom symbol
-     */
     function _generateWrappedTokenNames(
-        address saleToken,
-        string memory customName,
-        string memory customSymbol
+        address saleToken
     ) internal view returns (string memory name, string memory symbol) {
-        // If custom names are provided, use them
-        if (bytes(customName).length > 0) {
-            name = customName;
-        } else {
-            // Generate name from sale token
-            try IERC20Metadata(saleToken).name() returns (string memory tokenName) {
-                name = string(abi.encodePacked(tokenName, " Wrapped"));
-            } catch {
-                name = "Wrapped Token"; // Fallback name
-            }
+        // Generate name from sale token
+        try IERC20Metadata(saleToken).name() returns (string memory tokenName) {
+            name = string(abi.encodePacked(tokenName, " Wrapped"));
+        } catch {
+            name = "Wrapped Token"; // Fallback name
         }
 
-        if (bytes(customSymbol).length > 0) {
-            symbol = customSymbol;
-        } else {
-            // Generate symbol from sale token
-            try IERC20Metadata(saleToken).symbol() returns (string memory tokenSymbol) {
-                symbol = string(abi.encodePacked("w", tokenSymbol));
-            } catch {
-                symbol = "WRT"; // Fallback symbol
-            }
+        // Generate symbol from sale token
+        try IERC20Metadata(saleToken).symbol() returns (
+            string memory tokenSymbol
+        ) {
+            symbol = string(abi.encodePacked("w", tokenSymbol));
+        } catch {
+            symbol = "WRT"; // Fallback symbol
         }
     }
 
@@ -142,19 +123,18 @@ contract OfferingFactory is Ownable {
         Offering offering = new Offering();
         if (config.apyEnabled) {
             // Generate wrapped token names
-            (string memory wrappedName, string memory wrappedSymbol) = _generateWrappedTokenNames(
-                config.saleToken,
-                config.customWrappedName,
-                config.customWrappedSymbol
-            );
+            (
+                string memory wrappedName,
+                string memory wrappedSymbol
+            ) = _generateWrappedTokenNames(config.saleToken);
 
-            WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
+            WrappedTokenConfig memory wrappedConfig = WrappedTokenConfig({
                 name: wrappedName,
                 symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
-                payoutRate: config.payoutRate,
+                payoutAPR: config.payoutRate,
                 offeringContract: address(offering),
                 admin: msg.sender,
                 payoutPeriodDuration: config.payoutPeriodDuration
@@ -170,7 +150,6 @@ contract OfferingFactory is Ownable {
             maxInvestment: config.maxInvestment,
             startDate: config.startDate,
             endDate: config.endDate,
-            maturityDate: config.maturityDate,
             softCap: config.softCap,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,
@@ -210,13 +189,12 @@ contract OfferingFactory is Ownable {
 
         if (config.apyEnabled) {
             // Generate wrapped token names
-            (string memory wrappedName, string memory wrappedSymbol) = _generateWrappedTokenNames(
-                config.saleToken,
-                config.customWrappedName,
-                config.customWrappedSymbol
-            );
+            (
+                string memory wrappedName,
+                string memory wrappedSymbol
+            ) = _generateWrappedTokenNames(config.saleToken);
 
-            WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
+            WrappedTokenConfig memory wrappedConfig = WrappedTokenConfig({
                 name: wrappedName,
                 symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
@@ -238,7 +216,6 @@ contract OfferingFactory is Ownable {
             maxInvestment: config.maxInvestment,
             startDate: config.startDate,
             endDate: config.endDate,
-            maturityDate: config.maturityDate,
             softCap: config.softCap,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,

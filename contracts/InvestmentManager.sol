@@ -18,7 +18,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     uint256 public kybValidatorCount; // Track number of active validators
     mapping(address => bool) public refundsEnabledForOffering;
     mapping(bytes32 => bool) public usedSignatures; // Track used signatures to prevent replay
-    
+
     event InvestmentRouted(
         address indexed investor,
         address indexed offeringAddress,
@@ -33,16 +33,20 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         uint256 amount
     );
 
-    event RefundClaimed( // New event for subgraph
+    event RefundClaimed(
+        // New event for subgraph
         address indexed investor,
         address indexed offeringAddress,
         address indexed token,
         uint256 amount
     );
 
-    event refundEnabled(address indexed offeringAddress); 
+    event refundEnabled(address indexed offeringAddress);
 
-    event KYBValidatorUpdated(address indexed oldValidator, address indexed newValidator);
+    event KYBValidatorUpdated(
+        address indexed oldValidator,
+        address indexed newValidator
+    );
     event KYBValidatorAdded(address indexed validator);
     event KYBValidatorRemoved(address indexed validator);
     event KYBValidatedInvestment(
@@ -57,7 +61,10 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     constructor() Ownable(msg.sender) {}
 
     function setEscrowContract(address _escrowContract) external onlyOwner {
-        require(_escrowContract != address(0), "Invalid escrow contract address");
+        require(
+            _escrowContract != address(0),
+            "Invalid escrow contract address"
+        );
         escrowContract = _escrowContract;
     }
 
@@ -68,7 +75,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     function addKYBValidator(address _kybValidator) external onlyOwner {
         require(_kybValidator != address(0), "Invalid KYB validator address");
         require(!kybValidators[_kybValidator], "Validator already exists");
-        
+
         kybValidators[_kybValidator] = true;
         kybValidatorCount++;
         emit KYBValidatorAdded(_kybValidator);
@@ -82,7 +89,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         require(_kybValidator != address(0), "Invalid KYB validator address");
         require(kybValidators[_kybValidator], "Validator does not exist");
         require(kybValidatorCount > 1, "Cannot remove last validator");
-        
+
         kybValidators[_kybValidator] = false;
         kybValidatorCount--;
         emit KYBValidatorRemoved(_kybValidator);
@@ -94,8 +101,11 @@ contract InvestmentManager is Ownable, IInvestmentManager {
      */
     function setKYBValidator(address _kybValidator) external onlyOwner {
         require(_kybValidator != address(0), "Invalid KYB validator address");
-        require(kybValidatorCount == 0, "Use addKYBValidator for additional validators");
-        
+        require(
+            kybValidatorCount == 0,
+            "Use addKYBValidator for additional validators"
+        );
+
         kybValidators[_kybValidator] = true;
         kybValidatorCount++;
         emit KYBValidatorAdded(_kybValidator);
@@ -117,7 +127,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     ) public view returns (bool isValid) {
         require(kybValidatorCount > 0, "No KYB validators set");
         require(block.timestamp <= _expiry, "Signature expired");
-        
+
         // Create message hash
         bytes32 messageHash = keccak256(
             abi.encodePacked(
@@ -129,15 +139,15 @@ contract InvestmentManager is Ownable, IInvestmentManager {
                 address(this)
             )
         );
-        
+
         // Convert to Ethereum signed message hash
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
-        
+
         // Check if signature is already used
         if (usedSignatures[ethSignedMessageHash]) {
             return false;
         }
-        
+
         // Verify signature
         address recoveredSigner = ethSignedMessageHash.recover(_signature);
         return kybValidators[recoveredSigner];
@@ -161,8 +171,11 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         bytes memory _signature
     ) external payable {
         // Verify KYB signature for each investment
-        require(verifyKYBSignature(msg.sender, _nonce, _expiry, _signature), "Invalid KYB signature");
-        
+        require(
+            verifyKYBSignature(msg.sender, _nonce, _expiry, _signature),
+            "Invalid KYB signature"
+        );
+
         // Mark signature as used to prevent replay
         bytes32 messageHash = keccak256(
             abi.encodePacked(
@@ -176,11 +189,11 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         );
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         usedSignatures[ethSignedMessageHash] = true;
-        
+
         // Proceed with normal investment routing
         Offering offering = Offering(payable(_offeringAddress));
         uint256 tokensReceivedAmount;
-        
+
         if (_paymentToken == address(0)) {
             tokensReceivedAmount = offering.invest{value: msg.value}(
                 _paymentToken,
@@ -207,20 +220,35 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     }
 
     function notifyRefundsEnabled(address _offeringContract) external override {
-        require(msg.sender == escrowContract, "Only Escrow contract can call this function");
+        require(
+            msg.sender == escrowContract,
+            "Only Escrow contract can call this function"
+        );
         refundsEnabledForOffering[_offeringContract] = true;
         emit refundEnabled(_offeringContract); // Re-emitting the existing event for consistency
     }
 
-    function claimRefund(address _offeringContract, address _token) external override {
-        require(refundsEnabledForOffering[_offeringContract], "Refunds not enabled for this offering");
+    function claimRefund(
+        address _offeringContract,
+        address _token
+    ) external override {
+        require(
+            refundsEnabledForOffering[_offeringContract],
+            "Refunds not enabled for this offering"
+        );
         require(_offeringContract != address(0), "Invalid offering contract");
-        require(_token != address(0) || _token == address(0), "Invalid token address"); // Allow address(0) for ETH
+        require(
+            _token != address(0) || _token == address(0),
+            "Invalid token address"
+        ); // Allow address(0) for ETH
 
         Escrow escrow = Escrow(payable(escrowContract));
-        
+
         // Get the deposit amount and token from Escrow before calling refund
-        Escrow.DepositInfo memory depositInfo = escrow.getDepositInfo(_offeringContract, msg.sender);
+        Escrow.DepositInfo memory depositInfo = escrow.getDepositInfo(
+            _offeringContract,
+            msg.sender
+        );
         require(depositInfo.amount > 0, "No deposit found for refund");
         require(depositInfo.token == _token, "Token mismatch for refund");
 
@@ -228,7 +256,12 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         escrow.refund(_offeringContract, msg.sender);
 
         // Emit event for subgraph with the actual refunded amount and token
-        emit RefundClaimed(msg.sender, _offeringContract, depositInfo.token, depositInfo.amount);
+        emit RefundClaimed(
+            msg.sender,
+            _offeringContract,
+            depositInfo.token,
+            depositInfo.amount
+        );
     }
 
     function routeInvestment(
@@ -276,7 +309,9 @@ contract InvestmentManager is Ownable, IInvestmentManager {
      * @param _validator Address to check
      * @return isValidator Whether the address is a valid KYB validator
      */
-    function isKYBValidator(address _validator) external view returns (bool isValidator) {
+    function isKYBValidator(
+        address _validator
+    ) external view returns (bool isValidator) {
         return kybValidators[_validator];
     }
 
@@ -293,7 +328,9 @@ contract InvestmentManager is Ownable, IInvestmentManager {
      * @param _signatureHash Hash of the signature to check
      * @return isUsed Whether the signature has been used
      */
-    function isSignatureUsed(bytes32 _signatureHash) external view returns (bool isUsed) {
+    function isSignatureUsed(
+        bytes32 _signatureHash
+    ) external view returns (bool isUsed) {
         return usedSignatures[_signatureHash];
     }
 
