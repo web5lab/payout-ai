@@ -199,7 +199,13 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         // Set first payout date in WrappedToken
         if (apyEnabled && wrappedTokenAddress != address(0)) {
-            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
+            try IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate() {
+                // First payout date set successfully
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Failed to set first payout date: ", reason)));
+            } catch (bytes memory) {
+                revert("Failed to set first payout date: Unknown error");
+            }
         }
 
         emit OfferingFinalized(block.timestamp);
@@ -610,7 +616,13 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         // Set first payout date in WrappedToken
         if (apyEnabled && wrappedTokenAddress != address(0)) {
-            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
+            try IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate() {
+                // First payout date set successfully
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Failed to set first payout date: ", reason)));
+            } catch (bytes memory) {
+                revert("Failed to set first payout date: Unknown error");
+            }
         }
 
         emit OfferingFinalized(block.timestamp);
