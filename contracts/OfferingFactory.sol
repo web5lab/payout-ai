@@ -16,7 +16,6 @@ struct CreateOfferingConfig {
     uint256 startDate;
     uint256 endDate;
     uint256 maturityDate;
-    bool autoTransfer;
     bool apyEnabled;
     uint256 fundraisingCap;
     uint256 tokenPrice;
@@ -174,7 +173,6 @@ contract OfferingFactory is Ownable {
             startDate: config.startDate,
             endDate: config.endDate,
             maturityDate: config.maturityDate,
-            autoTransfer: config.autoTransfer,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,
             tokenOwner: config.tokenOwner,
@@ -243,7 +241,6 @@ contract OfferingFactory is Ownable {
             startDate: config.startDate,
             endDate: config.endDate,
             maturityDate: config.maturityDate,
-            autoTransfer: config.autoTransfer,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,
             tokenOwner: config.tokenOwner,

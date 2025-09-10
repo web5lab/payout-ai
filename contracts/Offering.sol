@@ -43,7 +43,6 @@ struct InitConfig {
     uint256 maxInvestment;
     uint256 startDate;
     uint256 endDate;
-    bool autoTransfer;
     uint256 fundraisingCap;
     uint256 tokenPrice;
     address tokenOwner;
@@ -64,7 +63,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     uint256 public maxInvestment;
     uint256 public startDate;
     uint256 public endDate;
-    bool public autoTransfer;
 
     uint256 public fundraisingCap;
     uint256 public totalRaised;
@@ -144,7 +142,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         maxInvestment = config.maxInvestment;
         startDate = config.startDate;
         endDate = config.endDate;
-        autoTransfer = config.autoTransfer;
         fundraisingCap = config.fundraisingCap;
         tokenPrice = config.tokenPrice;
         escrowAddress = config.escrowAddress;
@@ -228,14 +225,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         totalRaised += usdValue;
         totalInvested[investor] += usdValue;
 
-        // Ensure enough sale tokens if auto-transfer mode
-        if (autoTransfer) {
-            require(
-                saleToken.balanceOf(address(this)) >= tokensToReceive,
-                "Insufficient sale tokens"
-            );
-        }
-
         // Handle payments
         if (paymentToken == address(0)) {
             // Native currency to Escrow
@@ -260,31 +249,9 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
                 paymentAmount
             );
         }
-        // Handle token distribution
-        if (autoTransfer) {
-            if (apyEnabled) {
-                // Wrapped token investment
-                require(
-                    saleToken.approve(wrappedTokenAddress, tokensToReceive),
-                    "Approve failed"
-                );
-                IWRAPEDTOKEN(wrappedTokenAddress).registerInvestment(
-                    investor,
-                    tokensToReceive,
-                    usdValue
-                );
-            } else {
-                // Direct transfer of sale token
-                require(
-                    saleToken.transfer(investor, tokensToReceive),
-                    "Auto-transfer failed"
-                );
-            }
-        } else {
-            // Pending distribution
-            pendingTokens[investor] += tokensToReceive;
-            totalPendingTokens += tokensToReceive;
-        }
+
+        pendingTokens[investor] += tokensToReceive;
+        totalPendingTokens += tokensToReceive;
 
         emit Invested(investor, paymentToken, paymentAmount, tokensToReceive);
 
