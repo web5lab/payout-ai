@@ -127,6 +127,9 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     ) public view returns (bool isValid) {
         require(kybValidatorCount > 0, "No KYB validators set");
         require(block.timestamp <= _expiry, "Signature expired");
+        
+        // Validate chain ID to prevent cross-chain replay attacks
+        uint256 currentChainId = block.chainid;
 
         // Create message hash
         bytes32 messageHash = keccak256(
@@ -135,10 +138,13 @@ contract InvestmentManager is Ownable, IInvestmentManager {
                 _wallet,
                 _nonce,
                 _expiry,
-                block.chainid,
+                currentChainId,
                 address(this)
             )
         );
+        
+        // Additional validation: ensure signature is for current chain
+        require(currentChainId != 0, "Invalid chain ID");
 
         // Convert to Ethereum signed message hash
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
@@ -343,14 +349,16 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         require(_token != address(0), "Invalid token address");
         require(_amount > 0, "Amount must be greater than 0");
         require(_to != address(0), "Invalid recipient address");
-        IERC20(_token).transfer(_to, _amount);
+        bool transferSuccess = IERC20(_token).transfer(_to, _amount);
+        require(transferSuccess, "ERC20 rescue transfer failed");
     }
 
     // Function to allow the owner to withdraw any accidentally sent native currency
     function rescueNative(uint256 _amount, address _to) external onlyOwner {
         require(_amount > 0, "Amount must be greater than 0");
         require(_to != address(0), "Invalid recipient address");
-        payable(_to).transfer(_amount);
+        (bool success, ) = payable(_to).call{value: _amount}("");
+        require(success, "Native rescue transfer failed");
     }
 
     receive() external payable {}

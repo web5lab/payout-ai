@@ -243,10 +243,8 @@ contract Escrow is Ownable, ReentrancyGuard {
             // Update ETH totals
             investmentTotals[_offeringContract].totalETH -= depositInfo.amount;
 
-            (bool sent, ) = payable(_investor).call{value: depositInfo.amount}(
-                ""
-            );
-            require(sent, "ETH refund failed");
+            (bool success, ) = payable(_investor).call{value: depositInfo.amount}("");
+            require(success, "ETH refund transfer failed");
         } else {
             // Update token totals
             InvestmentTotals storage totals = investmentTotals[
@@ -254,13 +252,11 @@ contract Escrow is Ownable, ReentrancyGuard {
             ];
             totals.tokenTotals[depositInfo.token] -= depositInfo.amount;
 
-            require(
-                IERC20(depositInfo.token).transfer(
-                    _investor,
-                    depositInfo.amount
-                ),
-                "Token refund failed"
+            bool transferSuccess = IERC20(depositInfo.token).transfer(
+                _investor,
+                depositInfo.amount
             );
+            require(transferSuccess, "Token refund transfer failed");
         }
 
         emit Refunded(
@@ -310,10 +306,10 @@ contract Escrow is Ownable, ReentrancyGuard {
                 address(this).balance >= totals.totalETH,
                 "Insufficient ETH balance"
             );
-            (bool sentETH, ) = payable(offeringOwner).call{
+            (bool success, ) = payable(offeringOwner).call{
                 value: totals.totalETH
             }("");
-            require(sentETH, "ETH transfer to offering owner failed");
+            require(success, "ETH transfer to offering owner failed");
         }
 
         // Transfer all tokens
@@ -329,10 +325,8 @@ contract Escrow is Ownable, ReentrancyGuard {
                     IERC20(token).balanceOf(address(this)) >= amount,
                     "Insufficient token balance"
                 );
-                require(
-                    IERC20(token).transfer(offeringOwner, amount),
-                    "Token transfer failed"
-                );
+                bool transferSuccess = IERC20(token).transfer(offeringOwner, amount);
+                require(transferSuccess, "Token transfer to offering owner failed");
             }
         }
 
@@ -350,10 +344,17 @@ contract Escrow is Ownable, ReentrancyGuard {
         address _offeringContract,
         address _investor
     ) external onlyInvestmentManager nonReentrant {
-        // Add modifier
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
         require(refundsEnabled[_offeringContract], "Refunds not enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Cannot refund - offering finalized"
+        );
 
         DepositInfo memory userDeposit = deposits[_offeringContract][_investor];
         require(userDeposit.amount > 0, "Nothing to refund");
@@ -375,18 +376,14 @@ contract Escrow is Ownable, ReentrancyGuard {
 
         // Process refund
         if (userDeposit.token == address(0)) {
-            (bool sent, ) = payable(_investor).call{value: userDeposit.amount}(
-                ""
-            );
-            require(sent, "ETH refund failed");
+            (bool success, ) = payable(_investor).call{value: userDeposit.amount}("");
+            require(success, "ETH refund transfer failed");
         } else {
-            require(
-                IERC20(userDeposit.token).transfer(
-                    _investor,
-                    userDeposit.amount
-                ),
-                "Token refund failed"
+            bool transferSuccess = IERC20(userDeposit.token).transfer(
+                _investor,
+                userDeposit.amount
             );
+            require(transferSuccess, "Token refund transfer failed");
         }
 
         emit Refunded(
@@ -408,18 +405,16 @@ contract Escrow is Ownable, ReentrancyGuard {
         if (tokenAddr == address(0)) {
             // Withdraw ETH
             require(address(this).balance >= amount, "Insufficient ETH");
-            (bool sent, ) = payable(to).call{value: amount}("");
-            require(sent, "ETH withdraw failed");
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "ETH withdraw transfer failed");
         } else {
             // Withdraw ERC20
             require(
                 IERC20(tokenAddr).balanceOf(address(this)) >= amount,
                 "Insufficient tokens"
             );
-            require(
-                IERC20(tokenAddr).transfer(to, amount),
-                "Token withdraw failed"
-            );
+            bool transferSuccess = IERC20(tokenAddr).transfer(to, amount);
+            require(transferSuccess, "Token withdraw transfer failed");
         }
 
         emit Withdrawn(tokenAddr, amount, to);

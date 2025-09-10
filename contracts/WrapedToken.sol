@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {WrappedTokenConfig} from "./structs/WrappedTokenConfig.sol";
 
 /**
@@ -36,6 +38,9 @@ contract WRAPPEDTOKEN is
     ReentrancyGuard,
     Pausable
 {
+    using Math for uint256;
+    using SafeCast for uint256;
+
     // ============================================
     // CONSTANTS AND IMMUTABLE VARIABLES
     // ============================================
@@ -348,16 +353,10 @@ contract WRAPPEDTOKEN is
         uint256 amount,
         uint256 usdtValue
     ) external onlyOfferingContract whenNotPaused validAddress(_user) {
+        // Checks: Input validation
         if (amount == 0 || usdtValue == 0) revert InvalidAmount();
 
-        // Interaction: Transfer tokens from offering contract first
-        if (
-            !peggedToken.transferFrom(offeringContract, address(this), amount)
-        ) {
-            revert TransferFailed();
-        }
-
-        // Effects: Update state after successful transfer
+        // Effects: Update state before external calls (CEI pattern)
         totalEscrowed += amount;
         totalUSDTInvested += usdtValue;
 
@@ -375,6 +374,14 @@ contract WRAPPEDTOKEN is
                     userUSDTSnapshot[_user][i] = investors[_user].usdtValue;
                 }
             }
+        }
+
+        // Interactions: External call last (CEI pattern)
+        if (
+            !peggedToken.transferFrom(offeringContract, address(this), amount)
+        ) {
+            // Revert all state changes if transfer fails
+            revert TransferFailed();
         }
 
         emit InvestmentRegistered(_user, amount, usdtValue);
@@ -407,11 +414,20 @@ contract WRAPPEDTOKEN is
             return (0, 0);
         }
 
-        // Calculate APR for this specific period based on duration
-        periodAPR = (payoutAPR * payoutPeriodDuration) / SECONDS_PER_YEAR;
+        // Calculate APR for this specific period with overflow protection
+        // Use Math.mulDiv for safe multiplication and division
+        periodAPR = Math.mulDiv(
+            payoutAPR,
+            payoutPeriodDuration,
+            SECONDS_PER_YEAR
+        );
 
-        // Calculate required payout based on total USDT invested
-        requiredAmount = (totalUSDTInvested * periodAPR) / BASIS_POINTS;
+        // Calculate required payout with overflow protection
+        requiredAmount = Math.mulDiv(
+            totalUSDTInvested,
+            periodAPR,
+            BASIS_POINTS
+        );
 
         return (requiredAmount, periodAPR);
     }
@@ -434,12 +450,19 @@ contract WRAPPEDTOKEN is
             return 0;
         }
 
-        // Calculate period APR
-        uint256 periodAPR = (payoutAPR * payoutPeriodDuration) /
-            SECONDS_PER_YEAR;
+        // Calculate period APR with overflow protection
+        uint256 periodAPR = Math.mulDiv(
+            payoutAPR,
+            payoutPeriodDuration,
+            SECONDS_PER_YEAR
+        );
 
-        // Calculate expected payout based on user's USDT share
-        expectedPayout = (investor.usdtValue * periodAPR) / BASIS_POINTS;
+        // Calculate expected payout with overflow protection
+        expectedPayout = Math.mulDiv(
+            investor.usdtValue,
+            periodAPR,
+            BASIS_POINTS
+        );
 
         return expectedPayout;
     }
@@ -473,7 +496,9 @@ contract WRAPPEDTOKEN is
     function distributePayoutForPeriod(
         uint256 _amount
     ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant whenNotPaused {
+        // Checks: Input validation with overflow protection
         if (_amount == 0) revert InvalidAmount();
+        require(_amount <= type(uint128).max, "Payout amount too large");
 
         // Checks: Verify we can start a new payout period
         uint256 nextPayoutTime = getNextPayoutTime();
@@ -486,9 +511,12 @@ contract WRAPPEDTOKEN is
 
         // Effects: Update state after successful transfer
         currentPayoutPeriod += 1;
+        require(currentPayoutPeriod <= type(uint64).max, "Too many payout periods");
+        
         lastPayoutDistributionTime = block.timestamp;
 
         // Effects: Take snapshot of current total USDT invested for fair distribution
+        require(totalUSDTInvested <= type(uint128).max, "Total USDT too large");
         totalUSDTSnapshot[currentPayoutPeriod] = totalUSDTInvested;
         payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
 
@@ -552,12 +580,12 @@ contract WRAPPEDTOKEN is
                 uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(user, period);
 
                 if (userUSDTAtPeriod > 0) {
-                    // Calculate share based on USDT value proportion
-                    uint256 userShare = (periodFunds *
-                        userUSDTAtPeriod *
-                        PRECISION_SCALE) /
-                        totalUSDTAtPeriod /
-                        PRECISION_SCALE;
+                    // Calculate share with overflow protection
+                    uint256 userShare = Math.mulDiv(
+                        periodFunds,
+                        userUSDTAtPeriod,
+                        totalUSDTAtPeriod
+                    );
                     totalClaimable += userShare;
                 }
             }
@@ -576,9 +604,8 @@ contract WRAPPEDTOKEN is
         }
 
         // Interactions: External call last
-        if (!payoutToken.transfer(user, totalClaimable)) {
-            revert TransferFailed();
-        }
+        bool transferSuccess = payoutToken.transfer(user, totalClaimable);
+        require(transferSuccess, "Payout transfer failed");
 
         emit PayoutClaimed(user, totalClaimable, currentPayoutPeriod);
     }
@@ -682,11 +709,12 @@ contract WRAPPEDTOKEN is
                 uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(_user, period);
 
                 if (userUSDTAtPeriod > 0) {
-                    uint256 userShare = (periodFunds *
-                        userUSDTAtPeriod *
-                        PRECISION_SCALE) /
-                        totalUSDTAtPeriod /
-                        PRECISION_SCALE;
+                    // Calculate share with overflow protection
+                    uint256 userShare = Math.mulDiv(
+                        periodFunds,
+                        userUSDTAtPeriod,
+                        totalUSDTAtPeriod
+                    );
 
                     claimablePeriods[index] = period;
                     claimableAmounts[index] = userShare;
@@ -751,9 +779,8 @@ contract WRAPPEDTOKEN is
         _burn(msg.sender, wrappedBalance);
 
         // Interactions: Transfer original tokens
-        if (!peggedToken.transfer(msg.sender, depositedAmount)) {
-            revert TransferFailed();
-        }
+        bool transferSuccess = peggedToken.transfer(msg.sender, depositedAmount);
+        require(transferSuccess, "Final token transfer failed");
 
         emit FinalTokensClaimed(msg.sender, depositedAmount);
     }
@@ -815,9 +842,16 @@ contract WRAPPEDTOKEN is
         uint256 depositedAmount = investor.deposited;
         uint256 userUSDTValue = investor.usdtValue;
 
-        // Calculate penalty
-        uint256 penaltyAmount = (depositedAmount * emergencyUnlockPenalty) /
-            BASIS_POINTS;
+        // Calculate penalty with overflow protection
+        uint256 penaltyAmount = Math.mulDiv(
+            depositedAmount,
+            emergencyUnlockPenalty,
+        uint256 penaltyAmount = Math.mulDiv(
+            depositedAmount,
+            emergencyUnlockPenalty,
+            BASIS_POINTS
+        );
+        require(penaltyAmount <= depositedAmount, "Penalty calculation error");
         uint256 amountToReturn = depositedAmount - penaltyAmount;
 
         // Update state before external calls
@@ -829,9 +863,8 @@ contract WRAPPEDTOKEN is
         _burn(msg.sender, wrappedBalance);
 
         // Transfer tokens minus penalty
-        if (!peggedToken.transfer(msg.sender, amountToReturn)) {
-            revert TransferFailed();
-        }
+        bool transferSuccess = peggedToken.transfer(msg.sender, amountToReturn);
+        require(transferSuccess, "Emergency unlock transfer failed");
 
         emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
     }

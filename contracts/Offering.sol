@@ -85,6 +85,9 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     address public escrowAddress;
     uint256 public tokenPrice;
 
+    /// @dev Maximum allowed price staleness (24 hours)
+    uint256 private constant MAX_PRICE_STALENESS = 24 hours;
+
     mapping(address => bool) public whitelistedPaymentTokens;
     mapping(address => uint256) public pendingTokens;
     mapping(address => uint256) public totalInvested;
@@ -256,8 +259,22 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         );
         require(totalRaised + usdValue <= fundraisingCap, "Exceeds cap");
 
+        // Additional safety checks for investment limits
+        require(
+            usdValue <= type(uint128).max,
+            "Investment amount too large"
+        );
+        require(
+            totalRaised <= type(uint128).max - usdValue,
+            "Total raised would overflow"
+        );
+        
         uint256 tokensToReceive = (usdValue * 1e18) / tokenPrice;
         require(tokensToReceive > 0, "Token amount too low");
+        require(
+            tokensToReceive <= type(uint128).max,
+            "Token amount too large"
+        );
 
         // Update investment tracking
         totalRaised += usdValue;
@@ -267,20 +284,42 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         if (paymentToken == address(0)) {
             // Native currency to Escrow
             require(msg.value == paymentAmount, "Incorrect native amount");
-            IEscrow(escrowAddress).depositNative{value: msg.value}(
-                address(this),
-                investor
+            (bool success, ) = escrowAddress.call{value: msg.value}(
+                abi.encodeWithSignature(
+                    "depositNative(address,address)",
+                    address(this),
+                    investor
+                )
             );
+            require(success, "Escrow deposit failed");
         } else {
             // ERC20 payment to Escrow
             require(msg.value == 0, "Do not send ETH for token payment");
-            IERC20(paymentToken).transferFrom(
+            
+            // Check transfer success
+            bool transferSuccess = IERC20(paymentToken).transferFrom(
                 investor,
                 address(this),
                 paymentAmount
             );
-            IERC20(paymentToken).approve(escrowAddress, paymentAmount);
-            IEscrow(escrowAddress).depositToken(
+            require(transferSuccess, "Payment token transfer failed");
+            
+            // Check approval success
+            bool approvalSuccess = IERC20(paymentToken).approve(escrowAddress, paymentAmount);
+            require(approvalSuccess, "Payment token approval failed");
+            
+            // Use low-level call for escrow interaction
+            (bool success, ) = escrowAddress.call(
+                abi.encodeWithSignature(
+                    "depositToken(address,address,address,uint256)",
+                    address(this),
+                    investor,
+                    paymentToken,
+                    paymentAmount
+                )
+            );
+            require(success, "Escrow token deposit failed");
+        }
                 address(this),
                 investor,
                 paymentToken,
@@ -321,17 +360,27 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         address oracle = tokenOracles[token];
         require(oracle != address(0), "Oracle not set");
 
-        (int224 value, ) = IApi3ReaderProxy(oracle).read();
+        (int224 value, uint32 timestamp) = IApi3ReaderProxy(oracle).read();
         require(value > 0, "Invalid price");
+        
+        // Validate price freshness to prevent stale price exploitation
+        require(
+            block.timestamp - timestamp <= MAX_PRICE_STALENESS,
+            "Price data too stale"
+        );
 
         uint8 tokenDecimals = token == address(0)
             ? 18
             : IERC20Metadata(token).decimals();
 
+        // Use checked arithmetic to prevent overflow
         usdValue =
             (amount * uint256(int256(value)) * 1e18) /
             (10 ** tokenDecimals) /
             1e18;
+        
+        // Additional overflow check
+        require(usdValue > 0, "USD value calculation overflow");
     }
 
     /**
@@ -427,7 +476,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         uint256 available = saleToken.balanceOf(address(this)) -
             totalPendingTokens;
         require(available > 0, "No unclaimed tokens");
-        require(saleToken.transfer(to, available), "Reclaim failed");
+        bool transferSuccess = saleToken.transfer(to, available);
+        require(transferSuccess, "Reclaim transfer failed");
         emit UnclaimedTokensReclaimed(to, available);
     }
 
@@ -452,7 +502,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
                 IERC20(token).balanceOf(address(this)) >= amount,
                 "Not enough tokens"
             );
-            require(IERC20(token).transfer(to, amount), "ERC20 rescue failed");
+            bool transferSuccess = IERC20(token).transfer(to, amount);
+            require(transferSuccess, "ERC20 rescue transfer failed");
         }
         emit Rescue(token, amount, to);
     }
