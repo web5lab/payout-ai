@@ -17,6 +17,7 @@ struct CreateOfferingConfig {
     uint256 endDate;
     uint256 maturityDate;
     bool apyEnabled;
+    uint256 softCap;
     uint256 fundraisingCap;
     uint256 tokenPrice;
     address tokenOwner;
@@ -173,6 +174,7 @@ contract OfferingFactory is Ownable {
             startDate: config.startDate,
             endDate: config.endDate,
             maturityDate: config.maturityDate,
+            softCap: config.softCap,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,
             tokenOwner: config.tokenOwner,
@@ -241,6 +243,7 @@ contract OfferingFactory is Ownable {
             startDate: config.startDate,
             endDate: config.endDate,
             maturityDate: config.maturityDate,
+            softCap: config.softCap,
             fundraisingCap: config.fundraisingCap,
             tokenPrice: config.tokenPrice,
             tokenOwner: config.tokenOwner,

@@ -43,6 +43,7 @@ struct InitConfig {
     uint256 maxInvestment;
     uint256 startDate;
     uint256 endDate;
+    uint256 softCap;
     uint256 fundraisingCap;
     uint256 tokenPrice;
     address tokenOwner;
@@ -63,12 +64,14 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     uint256 public maxInvestment;
     uint256 public startDate;
     uint256 public endDate;
+    uint256 public softCap;
 
     uint256 public fundraisingCap;
     uint256 public totalRaised;
     uint256 public totalPendingTokens;
     bool public isSaleClosed;
     bool public isOfferingFinalized;
+    bool public isOfferingCancelled;
     bool public apyEnabled;
     address public wrappedTokenAddress;
     address public investmentManager;
@@ -96,6 +99,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     event Claimed(address indexed investor, uint256 amount);
     event SaleClosed(uint256 totalRaised);
     event OfferingFinalized(uint256 timestamp); // New event
+    event OfferingCancelled(uint256 timestamp);
+    event SoftCapReached(uint256 totalRaised, uint256 softCap);
     event TokenPriceUpdated(uint256 newPrice);
     event PaymentTokenWhitelisted(address indexed token, bool status);
     event OracleSet(address indexed token, address oracle);
@@ -118,7 +123,9 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             config.investmentManager != address(0),
             "Invalid investment manager address"
         );
+        require(config.softCap > 0, "Soft cap must be positive");
         require(config.fundraisingCap > 0, "Fundraising cap must be positive");
+        require(config.softCap <= config.fundraisingCap, "Soft cap cannot exceed fundraising cap");
         require(config.tokenPrice > 0, "Token price must be positive");
         require(
             config.minInvestment <= config.maxInvestment,
@@ -142,6 +149,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         maxInvestment = config.maxInvestment;
         startDate = config.startDate;
         endDate = config.endDate;
+        softCap = config.softCap;
         fundraisingCap = config.fundraisingCap;
         tokenPrice = config.tokenPrice;
         escrowAddress = config.escrowAddress;
@@ -176,12 +184,46 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(msg.sender == escrowAddress, "Not authorized to finalize");
         require(block.timestamp >= endDate, "Sale not ended yet");
         require(!isOfferingFinalized, "Already finalized");
+        require(!isOfferingCancelled, "Offering is cancelled");
 
         isOfferingFinalized = true;
         isSaleClosed = true; // Ensure sale is closed when finalized
 
         emit OfferingFinalized(block.timestamp);
         emit SaleClosed(totalRaised);
+    }
+
+    /**
+     * @dev Finalize offering early if soft cap is reached. Only token owner can call.
+     */
+    function finalizeOfferingSoftCap() external onlyRole(TOKEN_OWNER_ROLE) {
+        require(totalRaised >= softCap, "Soft cap not reached");
+        require(!isOfferingFinalized, "Already finalized");
+        require(!isOfferingCancelled, "Offering is cancelled");
+        require(!isSaleClosed, "Sale already closed");
+
+        isOfferingFinalized = true;
+        isSaleClosed = true;
+
+        emit OfferingFinalized(block.timestamp);
+        emit SaleClosed(totalRaised);
+    }
+
+    /**
+     * @dev Cancel the offering and enable refunds. Only token owner can call.
+     *      Can be called anytime before finalization.
+     */
+    function cancelOffering() external onlyRole(TOKEN_OWNER_ROLE) {
+        require(!isOfferingFinalized, "Already finalized");
+        require(!isOfferingCancelled, "Already cancelled");
+
+        isOfferingCancelled = true;
+        isSaleClosed = true;
+
+        // Enable refunds in escrow
+        IEscrow(escrowAddress).enableRefunds(address(this));
+
+        emit OfferingCancelled(block.timestamp);
     }
 
     /**
@@ -202,6 +244,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     {
         require(investor != address(0), "Invalid investor address");
         require(!isSaleClosed, "Sale is closed");
+        require(!isOfferingCancelled, "Offering is cancelled");
         require(block.timestamp >= startDate, "Sale not started");
         require(block.timestamp < endDate, "Sale ended");
         require(
@@ -254,6 +297,11 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         totalPendingTokens += tokensToReceive;
 
         emit Invested(investor, paymentToken, paymentAmount, tokensToReceive);
+
+        // Check if soft cap is reached
+        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
+            emit SoftCapReached(totalRaised, softCap);
+        }
 
         // Close sale if cap reached
         if (totalRaised >= fundraisingCap) {
@@ -344,6 +392,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         returns (uint256)
     {
         require(isOfferingFinalized, "Offering not finalized yet");
+        require(!isOfferingCancelled, "Offering is cancelled");
 
         uint256 amount = pendingTokens[_investor];
         require(amount > 0, "No tokens to claim");
@@ -473,7 +522,21 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
      * @dev Check if offering can be finalized (end date reached and not already finalized).
      */
     function canFinalize() external view returns (bool) {
-        return block.timestamp >= endDate && !isOfferingFinalized;
+        return (block.timestamp >= endDate || totalRaised >= softCap) && !isOfferingFinalized && !isOfferingCancelled;
+    }
+
+    /**
+     * @dev Check if soft cap has been reached.
+     */
+    function isSoftCapReached() external view returns (bool) {
+        return totalRaised >= softCap;
+    }
+
+    /**
+     * @dev Check if offering can be cancelled by token owner.
+     */
+    function canCancel() external view returns (bool) {
+        return !isOfferingFinalized && !isOfferingCancelled;
     }
 
     /**
@@ -486,7 +549,10 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             bool saleActive,
             bool saleClosed,
             bool finalized,
+            bool cancelled,
+            bool softCapReached,
             uint256 raised,
+            uint256 softCapAmount,
             uint256 cap,
             uint256 endTime
         )
@@ -494,10 +560,14 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         saleActive =
             block.timestamp >= startDate &&
             block.timestamp < endDate &&
-            !isSaleClosed;
+            !isSaleClosed &&
+            !isOfferingCancelled;
         saleClosed = isSaleClosed;
         finalized = isOfferingFinalized;
+        cancelled = isOfferingCancelled;
+        softCapReached = totalRaised >= softCap;
         raised = totalRaised;
+        softCapAmount = softCap;
         cap = fundraisingCap;
         endTime = endDate;
     }

@@ -347,7 +347,34 @@ contract Escrow is Ownable, ReentrancyGuard {
         refundsEnabled[_offeringContract] = true;
         emit RefundsEnabled(_offeringContract);
         // Notify InvestmentManager that refunds are enabled for this offering
-        IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+        if (investmentManager != address(0)) {
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+        }
+    }
+
+    // Allow offering contract to enable refunds (for cancellation)
+    function enableRefunds(address _offeringContract) external {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(
+            msg.sender == owner() || msg.sender == _offeringContract,
+            "Only owner or offering contract can enable refunds"
+        );
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Cannot enable refunds - offering finalized"
+        );
+
+        refundsEnabled[_offeringContract] = true;
+        emit RefundsEnabled(_offeringContract);
+        
+        // Notify InvestmentManager that refunds are enabled for this offering
+        if (investmentManager != address(0)) {
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+        }
     }
 
     // Initiates refund to a specific investor for a specific offering contract

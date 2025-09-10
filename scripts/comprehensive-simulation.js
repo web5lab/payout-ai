@@ -877,8 +877,10 @@ async function main() {
   console.log("✅ Scenario 7: Manual Token Claims (Non-Auto Transfer)");
   console.log("✅ Scenario 8: Investment Limits Validation");
   console.log("✅ Scenario 9: Complex Payout with Dynamic Rebalancing");
+  console.log("✅ Scenario 10: Soft Cap Finalization");
+  console.log("✅ Scenario 11: Offering Cancellation and Refunds");
   
-  console.log("\n🎉 ALL SCENARIOS COMPLETED SUCCESSFULLY!");
+  console.log("\n🎉 ALL 11 SCENARIOS COMPLETED SUCCESSFULLY!");
   console.log("\n💡 Key Features Demonstrated:");
   console.log("   🔹 Factory pattern for deploying offerings and wrapped tokens");
   console.log("   🔹 Investment routing through InvestmentManager");
@@ -892,6 +894,9 @@ async function main() {
   console.log("   🔹 Dynamic rebalancing after token burns");
   console.log("   🔹 Manual vs automatic token distribution");
   console.log("   🔹 Offering finalization and fund transfer");
+  console.log("   🔹 Soft cap early finalization");
+  console.log("   🔹 Offering cancellation with automatic refunds");
+  console.log("   🔹 Multiple KYB validators support");
   
   console.log("\n🔧 System Architecture Validated:");
   console.log("   📦 OfferingFactory → Creates offerings and wrapped tokens");
@@ -900,6 +905,7 @@ async function main() {
   console.log("   🎁 WrappedToken → Handles APY payouts and emergency unlocks");
   console.log("   📊 Oracle Integration → USD value calculations");
   console.log("   🛡️ Access Control → Role-based permissions");
+  console.log("   🔐 KYB Validation → Off-chain signature verification");
   
   console.log("\n🎯 The complete offering ecosystem is fully functional!");
 }
