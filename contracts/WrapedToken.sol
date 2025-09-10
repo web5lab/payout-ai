@@ -38,7 +38,6 @@ contract WRAPPEDTOKEN is
     ReentrancyGuard,
     Pausable
 {
-    using SafeExternalCalls for address;
     using Math for uint256;
     using SafeCast for uint256;
 
@@ -380,13 +379,10 @@ contract WRAPPEDTOKEN is
         }
 
         // Interactions: External call last (CEI pattern)
-        try peggedToken.transferFrom(offeringContract, address(this), amount) returns (bool success) {
-            if (!success) {
-                revert TransferFailed();
-            }
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Token transfer failed: ", reason)));
-        } catch (bytes memory) {
+        if (
+            !peggedToken.transferFrom(offeringContract, address(this), amount)
+        ) {
+            // Revert all state changes if transfer fails
             revert TransferFailed();
         }
 
@@ -511,13 +507,7 @@ contract WRAPPEDTOKEN is
         if (block.timestamp < nextPayoutTime) revert PayoutNotAvailable();
 
         // Interactions: Transfer tokens before state changes
-        try payoutToken.transferFrom(msg.sender, address(this), _amount) returns (bool success) {
-            if (!success) {
-                revert TransferFailed();
-            }
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Payout token transfer failed: ", reason)));
-        } catch (bytes memory) {
+        if (!payoutToken.transferFrom(msg.sender, address(this), _amount)) {
             revert TransferFailed();
         }
 
@@ -621,13 +611,8 @@ contract WRAPPEDTOKEN is
         }
 
         // Interactions: External call last
-        try payoutToken.transfer(user, totalClaimable) returns (bool success) {
-            require(success, "Payout transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Payout transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Payout transfer failed: Unknown error");
-        }
+        bool transferSuccess = payoutToken.transfer(user, totalClaimable);
+        require(transferSuccess, "Payout transfer failed");
 
         emit PayoutClaimed(user, totalClaimable, currentPayoutPeriod);
     }
@@ -812,13 +797,8 @@ contract WRAPPEDTOKEN is
         _burn(msg.sender, wrappedBalance);
 
         // Interactions: Transfer original tokens
-        try peggedToken.transfer(msg.sender, depositedAmount) returns (bool success) {
-            require(success, "Final token transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Final token transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Final token transfer failed: Unknown error");
-        }
+        bool transferSuccess = peggedToken.transfer(msg.sender, depositedAmount);
+        require(transferSuccess, "Final token transfer failed");
 
         emit FinalTokensClaimed(msg.sender, depositedAmount);
     }
@@ -900,13 +880,8 @@ contract WRAPPEDTOKEN is
         _burn(msg.sender, wrappedBalance);
 
         // Transfer tokens minus penalty
-        try peggedToken.transfer(msg.sender, amountToReturn) returns (bool success) {
-            require(success, "Emergency unlock transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Emergency unlock transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Emergency unlock transfer failed: Unknown error");
-        }
+        bool transferSuccess = peggedToken.transfer(msg.sender, amountToReturn);
+        require(transferSuccess, "Emergency unlock transfer failed");
 
         emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
     }

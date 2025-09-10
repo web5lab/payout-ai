@@ -57,8 +57,6 @@ struct InitConfig {
 }
 
 contract Offering is AccessControl, Pausable, ReentrancyGuard {
-    using SafeExternalCalls for address;
-    
     IERC20 public saleToken;
 
     bytes32 public constant TOKEN_OWNER_ROLE = keccak256("TOKEN_OWNER_ROLE");
@@ -286,16 +284,14 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         if (paymentToken == address(0)) {
             // Native currency to Escrow
             require(msg.value == paymentAmount, "Incorrect native amount");
-            try IEscrow(escrowAddress).depositNative{value: msg.value}(
-                address(this),
-                investor
-            ) {
-                // Deposit successful
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Escrow deposit failed: ", reason)));
-            } catch (bytes memory) {
-                revert("Escrow deposit failed: Unknown error");
-            }
+            (bool success, ) = escrowAddress.call{value: msg.value}(
+                abi.encodeWithSignature(
+                    "depositNative(address,address)",
+                    address(this),
+                    investor
+                )
+            );
+            require(success, "Escrow deposit failed");
         } else {
             // ERC20 payment to Escrow
             require(msg.value == 0, "Do not send ETH for token payment");
@@ -312,19 +308,17 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             bool approvalSuccess = IERC20(paymentToken).approve(escrowAddress, paymentAmount);
             require(approvalSuccess, "Payment token approval failed");
             
-            // Use interface call for escrow interaction
-            try IEscrow(escrowAddress).depositToken(
-                address(this),
-                investor,
-                paymentToken,
-                paymentAmount
-            ) {
-                // Deposit successful
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Escrow token deposit failed: ", reason)));
-            } catch (bytes memory) {
-                revert("Escrow token deposit failed: Unknown error");
-            }
+            // Use low-level call for escrow interaction
+            (bool success, ) = escrowAddress.call(
+                abi.encodeWithSignature(
+                    "depositToken(address,address,address,uint256)",
+                    address(this),
+                    investor,
+                    paymentToken,
+                    paymentAmount
+                )
+            );
+            require(success, "Escrow token deposit failed");
         }
 
         pendingTokens[investor] += tokensToReceive;
@@ -446,34 +440,18 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         totalPendingTokens -= amount;
 
         if (apyEnabled) {
-            try saleToken.approve(wrappedTokenAddress, amount) returns (bool success) {
-                require(success, "Sale token approval failed");
-                
-                uint256 usdValue = (amount * tokenPrice) / 1e18;
-                try IWRAPEDTOKEN(wrappedTokenAddress).registerInvestment(
-                    _investor,
-                    amount,
-                    usdValue
-                ) {
-                    // Registration successful
-                } catch Error(string memory reason) {
-                    revert(string(abi.encodePacked("Wrapped token registration failed: ", reason)));
-                } catch (bytes memory) {
-                    revert("Wrapped token registration failed: Unknown error");
-                }
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Sale token approval failed: ", reason)));
-            } catch (bytes memory) {
-                revert("Sale token approval failed: Unknown error");
-            }
+            saleToken.approve(wrappedTokenAddress, amount);
+            uint256 usdValue = (amount * tokenPrice) / 1e18;
+            IWRAPEDTOKEN(wrappedTokenAddress).registerInvestment(
+                _investor,
+                amount,
+                usdValue
+            );
         } else {
-            try saleToken.transfer(_investor, amount) returns (bool success) {
-                require(success, "Sale token transfer returned false");
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Sale token transfer failed: ", reason)));
-            } catch (bytes memory) {
-                revert("Sale token transfer failed: Unknown error");
-            }
+            require(
+                saleToken.transfer(_investor, amount),
+                "Token transfer failed"
+            );
         }
         emit Claimed(_investor, amount);
         return amount;
@@ -492,15 +470,8 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         uint256 available = saleToken.balanceOf(address(this)) -
             totalPendingTokens;
         require(available > 0, "No unclaimed tokens");
-        
-        try saleToken.transfer(to, available) returns (bool success) {
-            require(success, "Reclaim transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Reclaim transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Reclaim transfer failed: Unknown error");
-        }
-        
+        bool transferSuccess = saleToken.transfer(to, available);
+        require(transferSuccess, "Reclaim transfer failed");
         emit UnclaimedTokensReclaimed(to, available);
     }
 
@@ -517,74 +488,18 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         if (token == address(0)) {
             // Rescue LUMIA
             require(address(this).balance >= amount, "Not enough LUMIA");
-            _safeTransferETH(to, amount);
+            (bool sent, ) = to.call{value: amount}("");
+            require(sent, "LUMIA rescue failed");
         } else {
             require(token != address(saleToken), "Cannot rescue saleToken");
             require(
                 IERC20(token).balanceOf(address(this)) >= amount,
                 "Not enough tokens"
             );
-            _safeTransferERC20(token, to, amount);
+            bool transferSuccess = IERC20(token).transfer(to, amount);
+            require(transferSuccess, "ERC20 rescue transfer failed");
         }
         emit Rescue(token, amount, to);
-    }
-
-    /**
-     * @dev Safe ETH transfer with gas limit and proper error handling
-     * @param to Recipient address
-     * @param amount Amount to transfer
-     */
-    function _safeTransferETH(address to, uint256 amount) internal {
-        require(to != address(0), "Invalid recipient");
-        require(address(this).balance >= amount, "Insufficient ETH balance");
-        
-        // Use call with gas limit to prevent griefing
-        (bool success, bytes memory returnData) = payable(to).call{
-            value: amount,
-            gas: 50000 // Reasonable gas limit for ETH transfers
-        }("");
-        
-        if (!success) {
-            // If call failed, check if it's due to gas or other reason
-            if (returnData.length > 0) {
-                // Bubble up the revert reason
-                assembly {
-                    let returnDataSize := mload(returnData)
-                    revert(add(32, returnData), returnDataSize)
-                }
-            } else {
-                revert("ETH transfer failed");
-            }
-        }
-    }
-
-    /**
-     * @dev Safe ERC20 transfer with proper error handling
-     * @param token Token contract address
-     * @param to Recipient address
-     * @param amount Amount to transfer
-     */
-    function _safeTransferERC20(address token, address to, uint256 amount) internal {
-        require(token != address(0), "Invalid token");
-        require(to != address(0), "Invalid recipient");
-        require(amount > 0, "Invalid amount");
-        
-        // Check balance before transfer
-        uint256 contractBalance = IERC20(token).balanceOf(address(this));
-        require(contractBalance >= amount, "Insufficient token balance");
-        
-        // Use try-catch for safe transfer
-        try IERC20(token).transfer(to, amount) returns (bool success) {
-            require(success, "Token transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Token transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Token transfer failed: Unknown error");
-        }
-        
-        // Verify the transfer actually happened (protection against non-standard tokens)
-        uint256 newBalance = IERC20(token).balanceOf(address(this));
-        require(newBalance == contractBalance - amount, "Transfer amount mismatch");
     }
 
     /**

@@ -15,8 +15,6 @@ struct EscrowConfig {
 }
 
 contract Escrow is Ownable, ReentrancyGuard {
-    using SafeExternalCalls for address;
-    
     address public investmentManager; // New state variable
 
     modifier onlyInvestmentManager() {
@@ -261,7 +259,8 @@ contract Escrow is Ownable, ReentrancyGuard {
             // Update ETH totals
             investmentTotals[_offeringContract].totalETH -= depositInfo.amount;
 
-            _safeTransferETH(_investor, userDeposit.amount);
+            (bool success, ) = payable(_investor).call{value: depositInfo.amount}("");
+            require(success, "ETH refund transfer failed");
         } else {
             // Update token totals
             InvestmentTotals storage totals = investmentTotals[
@@ -269,7 +268,11 @@ contract Escrow is Ownable, ReentrancyGuard {
             ];
             totals.tokenTotals[depositInfo.token] -= depositInfo.amount;
 
-            _safeTransferERC20(userDeposit.token, _investor, userDeposit.amount);
+            bool transferSuccess = IERC20(depositInfo.token).transfer(
+                _investor,
+                depositInfo.amount
+            );
+            require(transferSuccess, "Token refund transfer failed");
         }
 
         emit Refunded(
@@ -319,7 +322,10 @@ contract Escrow is Ownable, ReentrancyGuard {
                 address(this).balance >= totals.totalETH,
                 "Insufficient ETH balance"
             );
-            _safeTransferETH(offeringOwner, totals.totalETH);
+            (bool success, ) = payable(offeringOwner).call{
+                value: totals.totalETH
+            }("");
+            require(success, "ETH transfer to offering owner failed");
         }
 
         // Transfer all tokens
@@ -335,7 +341,8 @@ contract Escrow is Ownable, ReentrancyGuard {
                     IERC20(token).balanceOf(address(this)) >= amount,
                     "Insufficient token balance"
                 );
-                _safeTransferERC20(token, offeringOwner, amount);
+                bool transferSuccess = IERC20(token).transfer(offeringOwner, amount);
+                require(transferSuccess, "Token transfer to offering owner failed");
             }
         }
 
@@ -385,15 +392,14 @@ contract Escrow is Ownable, ReentrancyGuard {
 
         // Process refund
         if (userDeposit.token == address(0)) {
-            // Use safe ETH transfer with gas limit
-            _safeTransferETH(_investor, userDeposit.amount);
+            (bool success, ) = payable(_investor).call{value: userDeposit.amount}("");
+            require(success, "ETH refund transfer failed");
         } else {
-            // Use safe ERC20 transfer
-            _safeTransferERC20(
-                userDeposit.token,
+            bool transferSuccess = IERC20(userDeposit.token).transfer(
                 _investor,
                 userDeposit.amount
             );
+            require(transferSuccess, "Token refund transfer failed");
         }
 
         emit Refunded(
@@ -415,14 +421,16 @@ contract Escrow is Ownable, ReentrancyGuard {
         if (tokenAddr == address(0)) {
             // Withdraw ETH
             require(address(this).balance >= amount, "Insufficient ETH");
-            _safeTransferETH(to, amount);
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "ETH withdraw transfer failed");
         } else {
             // Withdraw ERC20
             require(
                 IERC20(tokenAddr).balanceOf(address(this)) >= amount,
                 "Insufficient tokens"
             );
-            _safeTransferERC20(tokenAddr, to, amount);
+            bool transferSuccess = IERC20(tokenAddr).transfer(to, amount);
+            require(transferSuccess, "Token withdraw transfer failed");
         }
 
         emit Withdrawn(tokenAddr, amount, to);
@@ -551,62 +559,4 @@ contract Escrow is Ownable, ReentrancyGuard {
 
     // Allow contract to receive ETH
     receive() external payable {}
-
-    /**
-     * @dev Safe ETH transfer with gas limit and proper error handling
-     * @param to Recipient address
-     * @param amount Amount to transfer
-     */
-    function _safeTransferETH(address to, uint256 amount) internal {
-        require(to != address(0), "Invalid recipient");
-        require(address(this).balance >= amount, "Insufficient ETH balance");
-        
-        // Use call with gas limit to prevent griefing
-        (bool success, bytes memory returnData) = payable(to).call{
-            value: amount,
-            gas: 50000 // Reasonable gas limit for ETH transfers
-        }("");
-        
-        if (!success) {
-            // If call failed, check if it's due to gas or other reason
-            if (returnData.length > 0) {
-                // Bubble up the revert reason
-                assembly {
-                    let returnDataSize := mload(returnData)
-                    revert(add(32, returnData), returnDataSize)
-                }
-            } else {
-                revert("ETH transfer failed");
-            }
-        }
-    }
-
-    /**
-     * @dev Safe ERC20 transfer with proper error handling
-     * @param token Token contract address
-     * @param to Recipient address
-     * @param amount Amount to transfer
-     */
-    function _safeTransferERC20(address token, address to, uint256 amount) internal {
-        require(token != address(0), "Invalid token");
-        require(to != address(0), "Invalid recipient");
-        require(amount > 0, "Invalid amount");
-        
-        // Check balance before transfer
-        uint256 contractBalance = IERC20(token).balanceOf(address(this));
-        require(contractBalance >= amount, "Insufficient token balance");
-        
-        // Use try-catch for safe transfer
-        try IERC20(token).transfer(to, amount) returns (bool success) {
-            require(success, "Token transfer returned false");
-        } catch Error(string memory reason) {
-            revert(string(abi.encodePacked("Token transfer failed: ", reason)));
-        } catch (bytes memory) {
-            revert("Token transfer failed: Unknown error");
-        }
-        
-        // Verify the transfer actually happened (protection against non-standard tokens)
-        uint256 newBalance = IERC20(token).balanceOf(address(this));
-        require(newBalance == contractBalance - amount, "Transfer amount mismatch");
-    }
 }
