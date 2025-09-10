@@ -15,8 +15,8 @@ struct CreateOfferingConfig {
     uint256 maxInvestment;
     uint256 startDate;
     uint256 endDate;
-    uint256 maturityDate;
     bool apyEnabled;
+    uint256 softCap;
     uint256 softCap;
     uint256 fundraisingCap;
     uint256 tokenPrice;
