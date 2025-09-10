@@ -320,12 +320,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             );
             require(success, "Escrow token deposit failed");
         }
-                address(this),
-                investor,
-                paymentToken,
-                paymentAmount
-            );
-        }
 
         pendingTokens[investor] += tokensToReceive;
         totalPendingTokens += tokensToReceive;
