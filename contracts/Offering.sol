@@ -498,6 +498,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         address to
     ) external onlyRole(TOKEN_OWNER_ROLE) nonReentrant {
         require(isOfferingFinalized, "Offering not finalized");
+        require(isOfferingFinalized, "Offering not finalized");
         require(to != address(0), "Invalid address");
 
         uint256 available = saleToken.balanceOf(address(this)) -
@@ -585,6 +586,22 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(_endDate > block.timestamp, "Invalid end date");
         require(_endDate > endDate, "New end date must be after current");
         endDate = _endDate;
+    }
+
+    /**
+     * @dev Finalize offering early if soft cap is reached. Only token owner can call.
+     */
+    function finalizeOfferingSoftCap() external onlyRole(TOKEN_OWNER_ROLE) {
+        require(totalRaised >= softCap, "Soft cap not reached");
+        require(!isOfferingFinalized, "Already finalized");
+        require(!isOfferingCancelled, "Offering is cancelled");
+        require(!isSaleClosed, "Sale already closed");
+
+        isOfferingFinalized = true;
+        isSaleClosed = true;
+
+        emit OfferingFinalized(block.timestamp);
+        emit SaleClosed(totalRaised);
     }
 
     /**
