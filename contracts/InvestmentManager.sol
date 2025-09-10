@@ -3,13 +3,22 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./Offering.sol";
 import "./interfaces/IInvestmentManager.sol"; // Import the interface
 import "./Escrow.sol"; // Import Escrow to interact with it
 
 contract InvestmentManager is Ownable, IInvestmentManager {
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
+
     address public escrowContract;
+    address public kybValidator; // Address that signs KYB validations
     mapping(address => bool) public refundsEnabledForOffering;
+    mapping(bytes32 => bool) public usedSignatures; // Track used signatures to prevent replay
+    mapping(address => bool) public kybValidatedWallets; // Track validated wallets
+    
     event InvestmentRouted(
         address indexed investor,
         address indexed offeringAddress,
@@ -33,11 +42,178 @@ contract InvestmentManager is Ownable, IInvestmentManager {
 
     event refundEnabled(address indexed offeringAddress); // This event seems to be for the old flow, might be removed later.
 
+    event KYBValidatorUpdated(address indexed oldValidator, address indexed newValidator);
+    event WalletKYBValidated(address indexed wallet, address indexed validator);
+    event KYBValidatedInvestment(
+        address indexed investor,
+        address indexed offeringAddress,
+        address indexed paymentToken,
+        uint256 paidAmount,
+        uint256 tokensReceived,
+        bytes32 signatureHash
+    );
+
     constructor() Ownable(msg.sender) {}
 
     function setEscrowContract(address _escrowContract) external onlyOwner {
         require(_escrowContract != address(0), "Invalid escrow contract address");
         escrowContract = _escrowContract;
+    }
+
+    /**
+     * @notice Set the KYB validator address that signs wallet validations
+     * @param _kybValidator Address of the KYB validator (backend signer)
+     */
+    function setKYBValidator(address _kybValidator) external onlyOwner {
+        require(_kybValidator != address(0), "Invalid KYB validator address");
+        address oldValidator = kybValidator;
+        kybValidator = _kybValidator;
+        emit KYBValidatorUpdated(oldValidator, _kybValidator);
+    }
+
+    /**
+     * @notice Verify KYB signature for a wallet
+     * @param _wallet Wallet address to validate
+     * @param _nonce Unique nonce to prevent replay attacks
+     * @param _expiry Signature expiry timestamp
+     * @param _signature Off-chain signature from KYB validator
+     * @return isValid Whether the signature is valid and not expired
+     */
+    function verifyKYBSignature(
+        address _wallet,
+        uint256 _nonce,
+        uint256 _expiry,
+        bytes memory _signature
+    ) public view returns (bool isValid) {
+        require(kybValidator != address(0), "KYB validator not set");
+        require(block.timestamp <= _expiry, "Signature expired");
+        
+        // Create message hash
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "KYB_VALIDATION",
+                _wallet,
+                _nonce,
+                _expiry,
+                block.chainid,
+                address(this)
+            )
+        );
+        
+        // Convert to Ethereum signed message hash
+        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+        
+        // Check if signature is already used
+        if (usedSignatures[ethSignedMessageHash]) {
+            return false;
+        }
+        
+        // Verify signature
+        address recoveredSigner = ethSignedMessageHash.recover(_signature);
+        return recoveredSigner == kybValidator;
+    }
+
+    /**
+     * @notice Validate wallet with KYB signature (one-time validation)
+     * @param _nonce Unique nonce to prevent replay attacks
+     * @param _expiry Signature expiry timestamp
+     * @param _signature Off-chain signature from KYB validator
+     */
+    function validateWalletKYB(
+        uint256 _nonce,
+        uint256 _expiry,
+        bytes memory _signature
+    ) external {
+        require(!kybValidatedWallets[msg.sender], "Wallet already validated");
+        require(verifyKYBSignature(msg.sender, _nonce, _expiry, _signature), "Invalid KYB signature");
+        
+        // Mark signature as used
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "KYB_VALIDATION",
+                msg.sender,
+                _nonce,
+                _expiry,
+                block.chainid,
+                address(this)
+            )
+        );
+        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+        usedSignatures[ethSignedMessageHash] = true;
+        
+        // Mark wallet as validated
+        kybValidatedWallets[msg.sender] = true;
+        
+        emit WalletKYBValidated(msg.sender, kybValidator);
+    }
+
+    /**
+     * @notice Route investment with KYB signature validation
+     * @param _offeringAddress Address of the offering contract
+     * @param _paymentToken Address of payment token (address(0) for ETH)
+     * @param _paymentAmount Amount of payment tokens
+     * @param _nonce Unique nonce for signature
+     * @param _expiry Signature expiry timestamp
+     * @param _signature Off-chain KYB validation signature
+     */
+    function routeInvestmentWithKYB(
+        address _offeringAddress,
+        address _paymentToken,
+        uint256 _paymentAmount,
+        uint256 _nonce,
+        uint256 _expiry,
+        bytes memory _signature
+    ) external payable {
+        // Verify KYB signature if wallet is not already validated
+        if (!kybValidatedWallets[msg.sender]) {
+            require(verifyKYBSignature(msg.sender, _nonce, _expiry, _signature), "Invalid KYB signature");
+            
+            // Mark signature as used
+            bytes32 messageHash = keccak256(
+                abi.encodePacked(
+                    "KYB_VALIDATION",
+                    msg.sender,
+                    _nonce,
+                    _expiry,
+                    block.chainid,
+                    address(this)
+                )
+            );
+            bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
+            usedSignatures[ethSignedMessageHash] = true;
+            
+            // Mark wallet as validated for future investments
+            kybValidatedWallets[msg.sender] = true;
+            emit WalletKYBValidated(msg.sender, kybValidator);
+        }
+        
+        // Proceed with normal investment routing
+        Offering offering = Offering(payable(_offeringAddress));
+        uint256 tokensReceivedAmount;
+        
+        if (_paymentToken == address(0)) {
+            tokensReceivedAmount = offering.invest{value: msg.value}(
+                _paymentToken,
+                msg.sender,
+                _paymentAmount
+            );
+        } else {
+            tokensReceivedAmount = offering.invest(
+                _paymentToken,
+                msg.sender,
+                _paymentAmount
+            );
+        }
+
+        // Emit specialized event for KYB-validated investments
+        emit KYBValidatedInvestment(
+            msg.sender,
+            _offeringAddress,
+            _paymentToken,
+            _paymentAmount,
+            tokensReceivedAmount,
+            keccak256(_signature)
+        );
     }
 
     function notifyRefundsEnabled(address _offeringContract) external override {
@@ -103,6 +279,51 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         Offering offering = Offering(payable(_offeringAddress));
         uint256 claimedAmount = offering.claimTokens(msg.sender);
         emit TokensClaimed(msg.sender, _offeringAddress, claimedAmount);
+    }
+
+    /**
+     * @notice Check if a wallet is KYB validated
+     * @param _wallet Wallet address to check
+     * @return isValidated Whether the wallet is KYB validated
+     */
+    function isWalletKYBValidated(address _wallet) external view returns (bool isValidated) {
+        return kybValidatedWallets[_wallet];
+    }
+
+    /**
+     * @notice Get KYB validator address
+     * @return validator Address of the current KYB validator
+     */
+    function getKYBValidator() external view returns (address validator) {
+        return kybValidator;
+    }
+
+    /**
+     * @notice Check if a signature hash has been used
+     * @param _signatureHash Hash of the signature to check
+     * @return isUsed Whether the signature has been used
+     */
+    function isSignatureUsed(bytes32 _signatureHash) external view returns (bool isUsed) {
+        return usedSignatures[_signatureHash];
+    }
+
+    /**
+     * @notice Admin function to manually validate a wallet (emergency use)
+     * @param _wallet Wallet address to validate
+     */
+    function adminValidateWallet(address _wallet) external onlyOwner {
+        require(_wallet != address(0), "Invalid wallet address");
+        kybValidatedWallets[_wallet] = true;
+        emit WalletKYBValidated(_wallet, msg.sender);
+    }
+
+    /**
+     * @notice Admin function to revoke wallet validation
+     * @param _wallet Wallet address to revoke validation
+     */
+    function revokeWalletValidation(address _wallet) external onlyOwner {
+        require(_wallet != address(0), "Invalid wallet address");
+        kybValidatedWallets[_wallet] = false;
     }
 
     // Function to allow the owner to withdraw any accidentally sent ERC20 tokens
