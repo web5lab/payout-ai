@@ -267,7 +267,7 @@ describe("InvestmentManager KYB Validation", function () {
     describe("KYB Investment Routing", function () {
         it("Should allow investment with valid KYB signature", async function () {
             const fixture = await loadFixture(deployKYBTestFixture);
-            const { investmentManager, kybValidator, investor1, paymentToken } = fixture;
+            const { investmentManager, kybValidator, investor1, paymentToken, saleToken } = fixture;
             const { offeringAddress, startDate } = await createTestOffering(fixture);
 
             await time.increaseTo(startDate + 10);
@@ -293,14 +293,14 @@ describe("InvestmentManager KYB Validation", function () {
                 sigData.expiry,
                 sigData.signature
             ))
-                .to.emit(investmentManager, "WalletKYBValidated")
-                .withArgs(investor1.address, kybValidator.address)
-                .and.to.emit(investmentManager, "KYBValidatedInvestment");
+                .to.emit(investmentManager, "KYBValidatedInvestment");
 
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.true;
+            // Check investment was successful
+            const investorBalance = await saleToken.balanceOf(investor1.address);
+            expect(investorBalance).to.be.gt(0);
         });
 
-        it("Should allow subsequent investments without new signature", async function () {
+        it("Should require new signature for subsequent investments", async function () {
             const fixture = await loadFixture(deployKYBTestFixture);
             const { investmentManager, kybValidator, investor1, paymentToken } = fixture;
             const { offeringAddress, startDate } = await createTestOffering(fixture);
@@ -330,7 +330,14 @@ describe("InvestmentManager KYB Validation", function () {
                 sigData.signature
             );
 
-            // Second investment without signature (wallet already validated)
+            // Second investment with new signature
+            const nonce2 = Date.now() + 1;
+            const expiry2 = (await time.latest()) + 3600;
+            
+            const sigData2 = await generateKYBSignature(
+                investor1.address, nonce2, expiry2, chainId, contractAddress, kybValidator
+            );
+            
             const investAmount2 = ethers.parseUnits("200", 18);
             await paymentToken.connect(investor1).approve(offeringAddress, investAmount2);
 
@@ -338,12 +345,52 @@ describe("InvestmentManager KYB Validation", function () {
                 offeringAddress,
                 paymentToken.target,
                 investAmount2,
-                0, // Dummy nonce
-                0, // Dummy expiry
-                "0x" // Empty signature
+                sigData2.nonce,
+                sigData2.expiry,
+                sigData2.signature
             ))
                 .to.emit(investmentManager, "KYBValidatedInvestment")
-                .and.to.not.emit(investmentManager, "WalletKYBValidated"); // Should not emit validation again
+        });
+
+        it("Should reject second investment with same signature", async function () {
+            const fixture = await loadFixture(deployKYBTestFixture);
+            const { investmentManager, kybValidator, investor1, paymentToken } = fixture;
+            const { offeringAddress, startDate } = await createTestOffering(fixture);
+
+            await time.increaseTo(startDate + 10);
+
+            const chainId = (await ethers.provider.getNetwork()).chainId;
+            const contractAddress = await investmentManager.getAddress();
+            const nonce = Date.now();
+            const expiry = (await time.latest()) + 3600;
+
+            const sigData = await generateKYBSignature(
+                investor1.address, nonce, expiry, chainId, contractAddress, kybValidator
+            );
+
+            const investAmount = ethers.parseUnits("300", 18);
+            await paymentToken.mint(investor1.address, investAmount * 2n);
+            await paymentToken.connect(investor1).approve(offeringAddress, investAmount * 2n);
+
+            // First investment
+            await investmentManager.connect(investor1).routeInvestmentWithKYB(
+                offeringAddress,
+                paymentToken.target,
+                investAmount,
+                sigData.nonce,
+                sigData.expiry,
+                sigData.signature
+            );
+
+            // Second investment with same signature should fail
+            await expect(investmentManager.connect(investor1).routeInvestmentWithKYB(
+                offeringAddress,
+                paymentToken.target,
+                investAmount,
+                sigData.nonce,
+                sigData.expiry,
+                sigData.signature
+            )).to.be.revertedWith("Invalid KYB signature");
         });
 
         it("Should reject investment with invalid signature", async function () {
@@ -438,42 +485,6 @@ describe("InvestmentManager KYB Validation", function () {
         });
     });
 
-    describe("Admin Functions", function () {
-        it("Should allow admin to manually validate wallet", async function () {
-            const { investmentManager, admin, investor1 } = await loadFixture(deployKYBTestFixture);
-
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.false;
-
-            await expect(investmentManager.connect(admin).adminValidateWallet(investor1.address))
-                .to.emit(investmentManager, "WalletKYBValidated")
-                .withArgs(investor1.address, admin.address);
-
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.true;
-        });
-
-        it("Should allow admin to revoke wallet validation", async function () {
-            const { investmentManager, admin, investor1 } = await loadFixture(deployKYBTestFixture);
-
-            // First validate
-            await investmentManager.connect(admin).adminValidateWallet(investor1.address);
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.true;
-
-            // Then revoke
-            await investmentManager.connect(admin).revokeWalletValidation(investor1.address);
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.false;
-        });
-
-        it("Should revert admin functions when called by non-owner", async function () {
-            const { investmentManager, investor1 } = await loadFixture(deployKYBTestFixture);
-
-            await expect(investmentManager.connect(investor1).adminValidateWallet(investor1.address))
-                .to.be.revertedWithCustomError(investmentManager, "OwnableUnauthorizedAccount");
-
-            await expect(investmentManager.connect(investor1).revokeWalletValidation(investor1.address))
-                .to.be.revertedWithCustomError(investmentManager, "OwnableUnauthorizedAccount");
-        });
-    });
-
     describe("Integration with Existing Functions", function () {
         it("Should work alongside regular routeInvestment function", async function () {
             const fixture = await loadFixture(deployKYBTestFixture);
@@ -531,15 +542,6 @@ describe("InvestmentManager KYB Validation", function () {
             expect(await investmentManager.getKYBValidator()).to.equal(kybValidator.address);
         });
 
-        it("Should return correct wallet validation status", async function () {
-            const { investmentManager, admin, investor1 } = await loadFixture(deployKYBTestFixture);
-
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.false;
-
-            await investmentManager.connect(admin).adminValidateWallet(investor1.address);
-            expect(await investmentManager.isWalletKYBValidated(investor1.address)).to.be.true;
-        });
-
         it("Should track signature usage correctly", async function () {
             const { investmentManager, kybValidator, investor1 } = await loadFixture(deployKYBTestFixture);
             
@@ -561,8 +563,14 @@ describe("InvestmentManager KYB Validation", function () {
 
             expect(await investmentManager.isSignatureUsed(ethSignedMessageHash)).to.be.false;
 
-            // Use signature
-            await investmentManager.connect(investor1).validateWalletKYB(
+            // Use signature for investment
+            await paymentToken.mint(investor1.address, ethers.parseUnits("300", 18));
+            await paymentToken.connect(investor1).approve(offeringAddress, ethers.parseUnits("300", 18));
+            
+            await investmentManager.connect(investor1).routeInvestmentWithKYB(
+                offeringAddress,
+                paymentToken.target,
+                ethers.parseUnits("300", 18),
                 sigData.nonce, sigData.expiry, sigData.signature
             );
 
@@ -584,16 +592,6 @@ describe("InvestmentManager KYB Validation", function () {
             await expect(freshInvestmentManager.verifyKYBSignature(
                 investor1.address, nonce, expiry, "0x1234"
             )).to.be.revertedWith("KYB validator not set");
-        });
-
-        it("Should handle zero address validation attempts", async function () {
-            const { investmentManager, admin } = await loadFixture(deployKYBTestFixture);
-
-            await expect(investmentManager.connect(admin).adminValidateWallet(ethers.ZeroAddress))
-                .to.be.revertedWith("Invalid wallet address");
-
-            await expect(investmentManager.connect(admin).revokeWalletValidation(ethers.ZeroAddress))
-                .to.be.revertedWith("Invalid wallet address");
         });
     });
 });

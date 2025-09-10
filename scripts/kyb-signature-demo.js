@@ -186,10 +186,6 @@ async function main() {
     );
     console.log(`✅ Signature verification: ${isValid}`);
 
-    // Check initial validation status
-    const isValidatedBefore = await investmentManager.isWalletKYBValidated(investor1.address);
-    console.log(`📊 Wallet validated before: ${isValidatedBefore}`);
-
     console.log("🎉 Scenario 1 Passed - KYB Signature Generation & Verification");
   } catch (error) {
     console.error("❌ Scenario 1 Failed:", error.message);
@@ -234,15 +230,9 @@ async function main() {
       kybSig1.expiry,
       kybSig1.signature
     ))
-      .to.emit(investmentManager, "WalletKYBValidated")
-      .withArgs(investor1.address, kybValidator.address)
-      .and.to.emit(investmentManager, "KYBValidatedInvestment");
+      .to.emit(investmentManager, "KYBValidatedInvestment");
 
     console.log(`✅ Investment completed with KYB validation`);
-
-    // Check wallet is now validated
-    const isValidatedAfter = await investmentManager.isWalletKYBValidated(investor1.address);
-    console.log(`📊 Wallet validated after investment: ${isValidatedAfter}`);
 
     // Check investment results
     const totalRaised = await offering.totalRaised();
@@ -255,35 +245,44 @@ async function main() {
     console.error("❌ Scenario 2 Failed:", error.message);
   }
 
-  // --- SCENARIO 3: Subsequent Investment (Already Validated) ---
+  // --- SCENARIO 3: Subsequent Investment (Requires New Signature) ---
   console.log("\n" + "=".repeat(60));
-  console.log("🔄 SCENARIO 3: Subsequent Investment (Already Validated)");
+  console.log("🔄 SCENARIO 3: Subsequent Investment (Requires New Signature)");
   console.log("=".repeat(60));
 
   try {
-    // Investor1 is already validated, so they can invest without new signature
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const contractAddress = await investmentManager.getAddress();
+    
+    // Generate new signature for second investment
+    const nonce2 = Date.now() + 2;
+    const expiry2 = (await time.latest()) + 3600;
+    
+    const kybSig2 = await generateKYBSignature(
+      investor1.address,
+      nonce2,
+      expiry2,
+      chainId,
+      contractAddress,
+      kybValidator
+    );
+    
     const investAmount2 = parseUnits("300"); // $300 additional investment
     await paymentToken.connect(investor1).approve(offeringAddress, investAmount2);
 
-    console.log("💸 Investor1 making second investment (already validated)...");
-    
-    // Use dummy signature values since wallet is already validated
-    const dummyNonce = 0;
-    const dummyExpiry = 0;
-    const dummySignature = "0x";
+    console.log("💸 Investor1 making second investment (new signature required)...");
 
     await expect(investmentManager.connect(investor1).routeInvestmentWithKYB(
       offeringAddress,
       await paymentToken.getAddress(),
       investAmount2,
-      dummyNonce,
-      dummyExpiry,
-      dummySignature
+      kybSig2.nonce,
+      kybSig2.expiry,
+      kybSig2.signature
     ))
       .to.emit(investmentManager, "KYBValidatedInvestment")
-      .and.to.not.emit(investmentManager, "WalletKYBValidated"); // Should not emit validation event again
 
-    console.log(`✅ Second investment completed without re-validation`);
+    console.log(`✅ Second investment completed with new signature`);
 
     const totalRaised = await offering.totalRaised();
     console.log(`📊 Total raised after second investment: $${formatUnits(totalRaised)}`);
@@ -455,131 +454,72 @@ async function main() {
     console.error("❌ Scenario 6 Failed:", error.message);
   }
 
-  // --- SCENARIO 7: Admin Manual Validation ---
+  // --- SCENARIO 7: Multiple Investments Same User ---
   console.log("\n" + "=".repeat(60));
-  console.log("👑 SCENARIO 7: Admin Manual Validation");
-  console.log("=".repeat(60));
-
-  try {
-    // Check investor3 is not validated
-    const isValidatedBefore = await investmentManager.isWalletKYBValidated(investor3.address);
-    console.log(`📊 Investor3 validated before: ${isValidatedBefore}`);
-
-    // Admin manually validates investor3
-    console.log("👑 Admin manually validating investor3...");
-    await expect(investmentManager.connect(deployer).adminValidateWallet(investor3.address))
-      .to.emit(investmentManager, "WalletKYBValidated")
-      .withArgs(investor3.address, deployer.address);
-
-    const isValidatedAfter = await investmentManager.isWalletKYBValidated(investor3.address);
-    console.log(`📊 Investor3 validated after: ${isValidatedAfter}`);
-
-    // Investor3 can now invest without signature
-    const investAmount = parseUnits("600");
-    await paymentToken.connect(investor3).approve(offeringAddress, investAmount);
-
-    console.log("💸 Investor3 investing (manually validated)...");
-    await investmentManager.connect(investor3).routeInvestment(
-      offeringAddress,
-      await paymentToken.getAddress(),
-      investAmount
-    );
-
-    console.log("✅ Investment successful with manual validation");
-
-    console.log("🎉 Scenario 7 Passed - Admin Manual Validation");
-  } catch (error) {
-    console.error("❌ Scenario 7 Failed:", error.message);
-  }
-
-  // --- SCENARIO 8: Validation Revocation ---
-  console.log("\n" + "=".repeat(60));
-  console.log("🚫 SCENARIO 8: Validation Revocation");
-  console.log("=".repeat(60));
-
-  try {
-    // Revoke investor3's validation
-    console.log("🚫 Admin revoking investor3's validation...");
-    await investmentManager.connect(deployer).revokeWalletValidation(investor3.address);
-
-    const isValidatedAfterRevoke = await investmentManager.isWalletKYBValidated(investor3.address);
-    console.log(`📊 Investor3 validated after revocation: ${isValidatedAfterRevoke}`);
-
-    // Investor3 should now need a new signature to invest
-    const investAmount = parseUnits("100");
-    await paymentToken.connect(investor3).approve(offeringAddress, investAmount);
-
-    console.log("🚫 Attempting investment after validation revocation...");
-    try {
-      await investmentManager.connect(investor3).routeInvestment(
-        offeringAddress,
-        await paymentToken.getAddress(),
-        investAmount
-      );
-      // This should still work with regular routeInvestment since it doesn't check KYB
-      console.log("✅ Regular investment still works (no KYB check in routeInvestment)");
-    } catch (error) {
-      console.log(`📊 Investment blocked: ${error.message}`);
-    }
-
-    console.log("🎉 Scenario 8 Passed - Validation Revocation");
-  } catch (error) {
-    console.error("❌ Scenario 8 Failed:", error.message);
-  }
-
-  // --- SCENARIO 9: One-Time Wallet Validation ---
-  console.log("\n" + "=".repeat(60));
-  console.log("🎫 SCENARIO 9: One-Time Wallet Validation");
+  console.log("🔄 SCENARIO 7: Multiple Investments Same User");
   console.log("=".repeat(60));
 
   try {
     const chainId = (await ethers.provider.getNetwork()).chainId;
     const contractAddress = await investmentManager.getAddress();
 
-    // Generate signature for one-time validation
-    const nonce5 = Date.now() + 5;
-    const expiry5 = (await time.latest()) + 3600;
+    // First investment
+    const nonce1 = Date.now() + 10;
+    const expiry1 = (await time.latest()) + 3600;
     
-    const validationSig = await generateKYBSignature(
+    const sig1 = await generateKYBSignature(
       investor3.address,
-      nonce5,
-      expiry5,
+      nonce1,
+      expiry1,
       chainId,
       contractAddress,
       kybValidator
     );
 
-    console.log("🎫 Investor3 performing one-time wallet validation...");
-    await expect(investmentManager.connect(investor3).validateWalletKYB(
-      validationSig.nonce,
-      validationSig.expiry,
-      validationSig.signature
-    ))
-      .to.emit(investmentManager, "WalletKYBValidated")
-      .withArgs(investor3.address, kybValidator.address);
+    const investAmount1 = parseUnits("250");
+    await paymentToken.connect(investor3).approve(offeringAddress, investAmount1);
 
-    const isValidated = await investmentManager.isWalletKYBValidated(investor3.address);
-    console.log(`✅ Wallet validated: ${isValidated}`);
-
-    // Now investor3 can use routeInvestmentWithKYB without providing signature
-    const investAmount = parseUnits("250");
-    await paymentToken.connect(investor3).approve(offeringAddress, investAmount);
-
-    console.log("💸 Investor3 investing after one-time validation...");
+    console.log("💸 Investor3 first investment...");
     await investmentManager.connect(investor3).routeInvestmentWithKYB(
       offeringAddress,
       await paymentToken.getAddress(),
-      investAmount,
-      0, // Dummy nonce
-      0, // Dummy expiry
-      "0x" // Empty signature
+      investAmount1,
+      sig1.nonce,
+      sig1.expiry,
+      sig1.signature
     );
 
-    console.log("✅ Investment successful without new signature");
+    // Second investment requires new signature
+    const nonce2 = Date.now() + 11;
+    const expiry2 = (await time.latest()) + 3600;
+    
+    const sig2 = await generateKYBSignature(
+      investor3.address,
+      nonce2,
+      expiry2,
+      chainId,
+      contractAddress,
+      kybValidator
+    );
 
-    console.log("🎉 Scenario 9 Passed - One-Time Wallet Validation");
+    const investAmount2 = parseUnits("150");
+    await paymentToken.connect(investor3).approve(offeringAddress, investAmount2);
+
+    console.log("💸 Investor3 second investment (new signature)...");
+    await investmentManager.connect(investor3).routeInvestmentWithKYB(
+      offeringAddress,
+      await paymentToken.getAddress(),
+      investAmount2,
+      sig2.nonce,
+      sig2.expiry,
+      sig2.signature
+    );
+
+    console.log("✅ Both investments successful with separate signatures");
+
+    console.log("🎉 Scenario 7 Passed - Multiple Investments Same User");
   } catch (error) {
-    console.error("❌ Scenario 9 Failed:", error.message);
+    console.error("❌ Scenario 7 Failed:", error.message);
   }
 
   // --- FINAL SUMMARY ---
@@ -589,29 +529,26 @@ async function main() {
   
   console.log("✅ Scenario 1: KYB Signature Generation & Verification");
   console.log("✅ Scenario 2: Investment with KYB Validation");
-  console.log("✅ Scenario 3: Subsequent Investment (Already Validated)");
+  console.log("✅ Scenario 3: Subsequent Investment (Requires New Signature)");
   console.log("✅ Scenario 4: Invalid Signature Rejection");
   console.log("✅ Scenario 5: Expired Signature Rejection");
   console.log("✅ Scenario 6: Signature Replay Attack Prevention");
-  console.log("✅ Scenario 7: Admin Manual Validation");
-  console.log("✅ Scenario 8: Validation Revocation");
-  console.log("✅ Scenario 9: One-Time Wallet Validation");
+  console.log("✅ Scenario 7: Multiple Investments Same User");
   
   console.log("\n🔐 KYB Features Implemented:");
+  console.log("   🔹 Per-investment signature requirement");
   console.log("   🔹 Off-chain signature generation and verification");
-  console.log("   🔹 Wallet validation with expiry timestamps");
   console.log("   🔹 Signature replay attack prevention");
-  console.log("   🔹 One-time wallet validation option");
-  console.log("   🔹 Admin manual validation/revocation");
-  console.log("   🔹 Persistent validation state");
+  console.log("   🔹 Signature expiry validation");
   console.log("   🔹 Chain-specific signature binding");
+  console.log("   🔹 No persistent wallet state storage");
   
   console.log("\n💡 Backend Integration Guide:");
-  console.log("   1. Generate signatures using the same message format");
+  console.log("   1. Generate fresh signature for each investment");
   console.log("   2. Include nonce, expiry, chainId, and contract address");
   console.log("   3. Use ECDSA signing with the KYB validator private key");
   console.log("   4. Frontend calls routeInvestmentWithKYB() with signature");
-  console.log("   5. Subsequent investments don't need new signatures");
+  console.log("   5. Each investment requires a new unique signature");
   
   console.log("\n🎯 KYB signature validation system is fully functional!");
 }
