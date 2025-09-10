@@ -360,12 +360,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         emit Invested(investor, paymentToken, paymentAmount, tokensToReceive);
 
         // Check if soft cap is reached
-        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
-            emit SoftCapReached(totalRaised, softCap);
-        }
-
-        // Check if soft cap is reached
-        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
+        if (totalRaised >= softCap && totalRaised - usdValue < softCap) {
             emit SoftCapReached(totalRaised, softCap);
         }
 
