@@ -14,7 +14,8 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     using MessageHashUtils for bytes32;
 
     address public escrowContract;
-    address public kybValidator; // Address that signs KYB validations
+    mapping(address => bool) public kybValidators; // Multiple addresses that can sign KYB validations
+    uint256 public kybValidatorCount; // Track number of active validators
     mapping(address => bool) public refundsEnabledForOffering;
     mapping(bytes32 => bool) public usedSignatures; // Track used signatures to prevent replay
     
@@ -42,6 +43,8 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     event refundEnabled(address indexed offeringAddress); 
 
     event KYBValidatorUpdated(address indexed oldValidator, address indexed newValidator);
+    event KYBValidatorAdded(address indexed validator);
+    event KYBValidatorRemoved(address indexed validator);
     event KYBValidatedInvestment(
         address indexed investor,
         address indexed offeringAddress,
@@ -59,14 +62,43 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     }
 
     /**
-     * @notice Set the KYB validator address that signs wallet validations
+     * @notice Add a KYB validator address that can sign wallet validations
+     * @param _kybValidator Address of the KYB validator to add
+     */
+    function addKYBValidator(address _kybValidator) external onlyOwner {
+        require(_kybValidator != address(0), "Invalid KYB validator address");
+        require(!kybValidators[_kybValidator], "Validator already exists");
+        
+        kybValidators[_kybValidator] = true;
+        kybValidatorCount++;
+        emit KYBValidatorAdded(_kybValidator);
+    }
+
+    /**
+     * @notice Remove a KYB validator address
+     * @param _kybValidator Address of the KYB validator to remove
+     */
+    function removeKYBValidator(address _kybValidator) external onlyOwner {
+        require(_kybValidator != address(0), "Invalid KYB validator address");
+        require(kybValidators[_kybValidator], "Validator does not exist");
+        require(kybValidatorCount > 1, "Cannot remove last validator");
+        
+        kybValidators[_kybValidator] = false;
+        kybValidatorCount--;
+        emit KYBValidatorRemoved(_kybValidator);
+    }
+
+    /**
+     * @notice Set the initial KYB validator (for backward compatibility)
      * @param _kybValidator Address of the KYB validator (backend signer)
      */
     function setKYBValidator(address _kybValidator) external onlyOwner {
         require(_kybValidator != address(0), "Invalid KYB validator address");
-        address oldValidator = kybValidator;
-        kybValidator = _kybValidator;
-        emit KYBValidatorUpdated(oldValidator, _kybValidator);
+        require(kybValidatorCount == 0, "Use addKYBValidator for additional validators");
+        
+        kybValidators[_kybValidator] = true;
+        kybValidatorCount++;
+        emit KYBValidatorAdded(_kybValidator);
     }
 
     /**
@@ -83,7 +115,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         uint256 _expiry,
         bytes memory _signature
     ) public view returns (bool isValid) {
-        require(kybValidator != address(0), "KYB validator not set");
+        require(kybValidatorCount > 0, "No KYB validators set");
         require(block.timestamp <= _expiry, "Signature expired");
         
         // Create message hash
@@ -108,7 +140,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         
         // Verify signature
         address recoveredSigner = ethSignedMessageHash.recover(_signature);
-        return recoveredSigner == kybValidator;
+        return kybValidators[recoveredSigner];
     }
 
     /**
@@ -240,11 +272,20 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     }
 
     /**
-     * @notice Get KYB validator address
-     * @return validator Address of the current KYB validator
+     * @notice Check if an address is a valid KYB validator
+     * @param _validator Address to check
+     * @return isValidator Whether the address is a valid KYB validator
      */
-    function getKYBValidator() external view returns (address validator) {
-        return kybValidator;
+    function isKYBValidator(address _validator) external view returns (bool isValidator) {
+        return kybValidators[_validator];
+    }
+
+    /**
+     * @notice Get the number of active KYB validators
+     * @return count Number of active validators
+     */
+    function getKYBValidatorCount() external view returns (uint256 count) {
+        return kybValidatorCount;
     }
 
     /**

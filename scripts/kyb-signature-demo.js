@@ -83,6 +83,11 @@ async function main() {
   await investmentManager.connect(deployer).setKYBValidator(kybValidator.address);
   console.log(`✅ KYB Validator set: ${kybValidator.address}`);
 
+  // Add additional validator for testing
+  const [, , , , , , , additionalValidator] = await ethers.getSigners();
+  await investmentManager.connect(deployer).addKYBValidator(additionalValidator.address);
+  console.log(`✅ Additional KYB Validator added: ${additionalValidator.address}`);
+
   // 4. Configure System
   await investmentManager.connect(deployer).setEscrowContract(await escrow.getAddress());
   await escrow.connect(treasuryOwner).setInvestmentManager(await investmentManager.getAddress());

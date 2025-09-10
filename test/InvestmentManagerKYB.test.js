@@ -101,28 +101,87 @@ describe("InvestmentManager KYB Validation", function () {
     }
 
     describe("KYB Validator Setup", function () {
-        it("Should set KYB validator correctly", async function () {
+        it("Should add KYB validator correctly", async function () {
             const { investmentManager, admin, kybValidator } = await loadFixture(deployKYBTestFixture);
             
-            await expect(investmentManager.connect(admin).setKYBValidator(kybValidator.address))
-                .to.emit(investmentManager, "KYBValidatorUpdated")
-                .withArgs(ethers.ZeroAddress, kybValidator.address);
+            await expect(investmentManager.connect(admin).addKYBValidator(kybValidator.address))
+                .to.emit(investmentManager, "KYBValidatorAdded")
+                .withArgs(kybValidator.address);
             
-            expect(await investmentManager.getKYBValidator()).to.equal(kybValidator.address);
+            expect(await investmentManager.isKYBValidator(kybValidator.address)).to.be.true;
+            expect(await investmentManager.getKYBValidatorCount()).to.equal(1);
         });
 
-        it("Should revert when setting zero address as KYB validator", async function () {
+        it("Should add multiple KYB validators", async function () {
+            const { investmentManager, admin, kybValidator, investor1, investor2 } = await loadFixture(deployKYBTestFixture);
+            
+            await investmentManager.connect(admin).addKYBValidator(kybValidator.address);
+            await investmentManager.connect(admin).addKYBValidator(investor1.address);
+            await investmentManager.connect(admin).addKYBValidator(investor2.address);
+            
+            expect(await investmentManager.getKYBValidatorCount()).to.equal(3);
+            expect(await investmentManager.isKYBValidator(kybValidator.address)).to.be.true;
+            expect(await investmentManager.isKYBValidator(investor1.address)).to.be.true;
+            expect(await investmentManager.isKYBValidator(investor2.address)).to.be.true;
+        });
+
+        it("Should remove KYB validator correctly", async function () {
+            const { investmentManager, admin, kybValidator, investor1 } = await loadFixture(deployKYBTestFixture);
+            
+            // Add two validators
+            await investmentManager.connect(admin).addKYBValidator(kybValidator.address);
+            await investmentManager.connect(admin).addKYBValidator(investor1.address);
+            
+            // Remove one validator
+            await expect(investmentManager.connect(admin).removeKYBValidator(investor1.address))
+                .to.emit(investmentManager, "KYBValidatorRemoved")
+                .withArgs(investor1.address);
+            
+            expect(await investmentManager.isKYBValidator(investor1.address)).to.be.false;
+            expect(await investmentManager.getKYBValidatorCount()).to.equal(1);
+        });
+
+        it("Should prevent removing last validator", async function () {
+            const { investmentManager, admin, kybValidator } = await loadFixture(deployKYBTestFixture);
+            
+            await investmentManager.connect(admin).addKYBValidator(kybValidator.address);
+            
+            await expect(investmentManager.connect(admin).removeKYBValidator(kybValidator.address))
+                .to.be.revertedWith("Cannot remove last validator");
+        });
+
+        it("Should prevent adding duplicate validator", async function () {
+            const { investmentManager, admin, kybValidator } = await loadFixture(deployKYBTestFixture);
+            
+            await investmentManager.connect(admin).addKYBValidator(kybValidator.address);
+            
+            await expect(investmentManager.connect(admin).addKYBValidator(kybValidator.address))
+                .to.be.revertedWith("Validator already exists");
+        });
+
+        it("Should revert when adding zero address as KYB validator", async function () {
             const { investmentManager, admin } = await loadFixture(deployKYBTestFixture);
             
-            await expect(investmentManager.connect(admin).setKYBValidator(ethers.ZeroAddress))
+            await expect(investmentManager.connect(admin).addKYBValidator(ethers.ZeroAddress))
                 .to.be.revertedWith("Invalid KYB validator address");
         });
 
-        it("Should revert when non-owner tries to set KYB validator", async function () {
+        it("Should revert when non-owner tries to add KYB validator", async function () {
             const { investmentManager, investor1, kybValidator } = await loadFixture(deployKYBTestFixture);
             
-            await expect(investmentManager.connect(investor1).setKYBValidator(kybValidator.address))
+            await expect(investmentManager.connect(investor1).addKYBValidator(kybValidator.address))
                 .to.be.revertedWithCustomError(investmentManager, "OwnableUnauthorizedAccount");
+        });
+
+        it("Should use setKYBValidator for initial setup only", async function () {
+            const { investmentManager, admin, kybValidator, investor1 } = await loadFixture(deployKYBTestFixture);
+            
+            // First call should work
+            await investmentManager.connect(admin).setKYBValidator(kybValidator.address);
+            
+            // Second call should fail
+            await expect(investmentManager.connect(admin).setKYBValidator(investor1.address))
+                .to.be.revertedWith("Use addKYBValidator for additional validators");
         });
     });
 
@@ -580,7 +639,7 @@ describe("InvestmentManager KYB Validation", function () {
 
     describe("Error Handling", function () {
         it("Should revert when KYB validator is not set", async function () {
-            const { admin, investor1 } = await loadFixture(deployKYBTestFixture);
+            const { investor1 } = await loadFixture(deployKYBTestFixture);
             
             // Deploy fresh InvestmentManager without setting KYB validator
             const InvestmentManager = await ethers.getContractFactory("InvestmentManager");
@@ -591,7 +650,39 @@ describe("InvestmentManager KYB Validation", function () {
 
             await expect(freshInvestmentManager.verifyKYBSignature(
                 investor1.address, nonce, expiry, "0x1234"
-            )).to.be.revertedWith("KYB validator not set");
+            )).to.be.revertedWith("No KYB validators set");
+        });
+
+        it("Should accept signatures from any valid validator", async function () {
+            const { investmentManager, admin, kybValidator, investor1, investor2 } = await loadFixture(deployKYBTestFixture);
+            
+            // Add multiple validators
+            await investmentManager.connect(admin).addKYBValidator(kybValidator.address);
+            await investmentManager.connect(admin).addKYBValidator(investor1.address);
+            
+            const chainId = (await ethers.provider.getNetwork()).chainId;
+            const contractAddress = await investmentManager.getAddress();
+            const nonce = Date.now();
+            const expiry = (await time.latest()) + 3600;
+
+            // Signature from first validator
+            const sigData1 = await generateKYBSignature(
+                investor2.address, nonce, expiry, chainId, contractAddress, kybValidator
+            );
+            
+            // Signature from second validator
+            const sigData2 = await generateKYBSignature(
+                investor2.address, nonce + 1, expiry, chainId, contractAddress, investor1
+            );
+
+            // Both should be valid
+            expect(await investmentManager.verifyKYBSignature(
+                investor2.address, sigData1.nonce, sigData1.expiry, sigData1.signature
+            )).to.be.true;
+            
+            expect(await investmentManager.verifyKYBSignature(
+                investor2.address, sigData2.nonce, sigData2.expiry, sigData2.signature
+            )).to.be.true;
         });
     });
 });

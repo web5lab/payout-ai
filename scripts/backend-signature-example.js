@@ -6,23 +6,43 @@ const { ethers } = require("ethers");
 /**
  * Backend KYB Signature Generator
  * This would typically run in your backend service
+ * Supports multiple KYB validators for redundancy and load balancing
  */
 class KYBSignatureGenerator {
-  constructor(privateKey, chainId, contractAddress) {
-    this.signer = new ethers.Wallet(privateKey);
+  constructor(privateKeys, chainId, contractAddress) {
+    // Support multiple validators
+    this.signers = Array.isArray(privateKeys) 
+      ? privateKeys.map(key => new ethers.Wallet(key))
+      : [new ethers.Wallet(privateKeys)];
     this.chainId = chainId;
     this.contractAddress = contractAddress;
+    this.currentSignerIndex = 0; // For round-robin signing
+  }
+
+  /**
+   * Get next signer for load balancing
+   */
+  getNextSigner() {
+    const signer = this.signers[this.currentSignerIndex];
+    this.currentSignerIndex = (this.currentSignerIndex + 1) % this.signers.length;
+    return signer;
   }
 
   /**
    * Generate KYB validation signature for a wallet
    * @param {string} walletAddress - Address to validate
    * @param {number} validityDuration - How long signature is valid (seconds)
+   * @param {number} signerIndex - Optional: specific signer to use (default: round-robin)
    * @returns {Object} Signature data
    */
-  async generateKYBSignature(walletAddress, validityDuration = 3600) {
+  async generateKYBSignature(walletAddress, validityDuration = 3600, signerIndex = null) {
     const nonce = Date.now(); // Use timestamp as nonce
     const expiry = Math.floor(Date.now() / 1000) + validityDuration;
+    
+    // Select signer
+    const signer = signerIndex !== null 
+      ? this.signers[signerIndex] 
+      : this.getNextSigner();
 
     // Create message hash (must match contract implementation)
     const messageHash = ethers.solidityPackedKeccak256(
@@ -31,7 +51,7 @@ class KYBSignatureGenerator {
     );
 
     // Sign the message
-    const signature = await this.signer.signMessage(ethers.getBytes(messageHash));
+    const signature = await signer.signMessage(ethers.getBytes(messageHash));
 
     return {
       walletAddress,
@@ -39,6 +59,8 @@ class KYBSignatureGenerator {
       expiry,
       signature,
       messageHash,
+      signerAddress: signer.address,
+      signerIndex: this.signers.indexOf(signer),
       validUntil: new Date(expiry * 1000).toISOString()
     };
   }
@@ -83,7 +105,15 @@ class KYBSignatureGenerator {
     const ethSignedMessageHash = ethers.hashMessage(ethers.getBytes(messageHash));
     const recoveredAddress = ethers.recoverAddress(ethSignedMessageHash, signature);
     
-    return recoveredAddress === this.signer.address;
+    return this.signers.some(signer => signer.address === recoveredAddress);
+  }
+
+  /**
+   * Get all validator addresses
+   * @returns {string[]} Array of validator addresses
+   */
+  getValidatorAddresses() {
+    return this.signers.map(signer => signer.address);
   }
 }
 
@@ -95,18 +125,22 @@ async function demonstrateBackendUsage() {
   console.log("=".repeat(50));
 
   // Example configuration (replace with your actual values)
-  const KYB_VALIDATOR_PRIVATE_KEY = "0x" + "1".repeat(64); // Example private key
+  const KYB_VALIDATOR_PRIVATE_KEYS = [
+    "0x" + "1".repeat(64), // Primary validator
+    "0x" + "2".repeat(64), // Secondary validator
+    "0x" + "3".repeat(64)  // Tertiary validator
+  ];
   const CHAIN_ID = 31337; // Hardhat local network
   const INVESTMENT_MANAGER_ADDRESS = "0x1234567890123456789012345678901234567890"; // Example address
 
   // Initialize generator
   const generator = new KYBSignatureGenerator(
-    KYB_VALIDATOR_PRIVATE_KEY,
+    KYB_VALIDATOR_PRIVATE_KEYS,
     CHAIN_ID,
     INVESTMENT_MANAGER_ADDRESS
   );
 
-  console.log(`KYB Validator Address: ${generator.signer.address}`);
+  console.log(`KYB Validator Addresses: ${generator.getValidatorAddresses().join(', ')}`);
   console.log(`Chain ID: ${CHAIN_ID}`);
   console.log(`Contract Address: ${INVESTMENT_MANAGER_ADDRESS}`);
 
@@ -129,6 +163,7 @@ async function demonstrateBackendUsage() {
     console.log(`   📊 Nonce: ${sigData.nonce}`);
     console.log(`   ⏰ Expires: ${sigData.validUntil}`);
     console.log(`   ✍️  Signature: ${sigData.signature.substring(0, 20)}...`);
+    console.log(`   🔑 Signed by: ${sigData.signerAddress}`);
     
     // Verify the signature
     const isValid = await generator.verifySignature(sigData);
@@ -177,7 +212,11 @@ app.post('/api/kyb/generate-signature', async (req, res) => {
     
     // Generate signature
     const generator = new KYBSignatureGenerator(
-      process.env.KYB_VALIDATOR_PRIVATE_KEY,
+      [
+        process.env.KYB_VALIDATOR_1_PRIVATE_KEY,
+        process.env.KYB_VALIDATOR_2_PRIVATE_KEY,
+        process.env.KYB_VALIDATOR_3_PRIVATE_KEY
+      ].filter(Boolean), // Remove any undefined keys
       process.env.CHAIN_ID,
       process.env.INVESTMENT_MANAGER_ADDRESS
     );
@@ -194,6 +233,7 @@ app.post('/api/kyb/generate-signature', async (req, res) => {
         nonce: signatureData.nonce,
         expiry: signatureData.expiry,
         signature: signatureData.signature,
+        signerAddress: signatureData.signerAddress,
         validUntil: signatureData.validUntil
       }
     });
@@ -209,7 +249,11 @@ app.post('/api/kyb/batch-generate', async (req, res) => {
     const { walletAddresses, validityHours = 1 } = req.body;
     
     const generator = new KYBSignatureGenerator(
-      process.env.KYB_VALIDATOR_PRIVATE_KEY,
+      [
+        process.env.KYB_VALIDATOR_1_PRIVATE_KEY,
+        process.env.KYB_VALIDATOR_2_PRIVATE_KEY,
+        process.env.KYB_VALIDATOR_3_PRIVATE_KEY
+      ].filter(Boolean),
       process.env.CHAIN_ID,
       process.env.INVESTMENT_MANAGER_ADDRESS
     );
