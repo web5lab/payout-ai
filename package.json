@@ -9,7 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "devDependencies": {
     "@graphprotocol/graph-cli": "^0.64.0",
     "@nomicfoundation/hardhat-toolbox": "^6.0.0",

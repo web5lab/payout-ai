@@ -21,6 +21,7 @@ interface IWRAPEDTOKEN {
     ) external;
 
     function claimPayout() external;
+    function setFirstPayoutDate() external;
 }
 
 interface IEscrow {
@@ -34,7 +35,7 @@ interface IEscrow {
         address tokenAddr,
         uint256 amount
     ) external;
-    function refund(address _offeringContract, address _investor) external;
+    function enableRefundsByOffering() external;
 }
 
 struct InitConfig {
@@ -43,7 +44,6 @@ struct InitConfig {
     uint256 maxInvestment;
     uint256 startDate;
     uint256 endDate;
-    uint256 softCap;
     uint256 softCap;
     uint256 fundraisingCap;
     uint256 tokenPrice;
@@ -66,14 +66,11 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     uint256 public startDate;
     uint256 public endDate;
     uint256 public softCap;
-    uint256 public softCap;
 
     uint256 public fundraisingCap;
     uint256 public totalRaised;
     uint256 public totalPendingTokens;
     bool public isSaleClosed;
-    bool public isOfferingFinalized;
-    bool public isOfferingCancelled;
     bool public isOfferingFinalized;
     bool public isOfferingCancelled;
     bool public apyEnabled;
@@ -105,9 +102,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     event OfferingFinalized(uint256 timestamp); // New event
     event OfferingCancelled(uint256 timestamp);
     event SoftCapReached(uint256 totalRaised, uint256 softCap);
-    event OfferingFinalized(uint256 timestamp); // New event
-    event OfferingCancelled(uint256 timestamp);
-    event SoftCapReached(uint256 totalRaised, uint256 softCap);
     event TokenPriceUpdated(uint256 newPrice);
     event PaymentTokenWhitelisted(address indexed token, bool status);
     event OracleSet(address indexed token, address oracle);
@@ -131,10 +125,11 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             "Invalid investment manager address"
         );
         require(config.softCap > 0, "Soft cap must be positive");
-        require(config.softCap > 0, "Soft cap must be positive");
         require(config.fundraisingCap > 0, "Fundraising cap must be positive");
-        require(config.softCap <= config.fundraisingCap, "Soft cap cannot exceed fundraising cap");
-        require(config.softCap <= config.fundraisingCap, "Soft cap cannot exceed fundraising cap");
+        require(
+            config.softCap <= config.fundraisingCap,
+            "Soft cap cannot exceed fundraising cap"
+        );
         require(config.tokenPrice > 0, "Token price must be positive");
         require(
             config.minInvestment <= config.maxInvestment,
@@ -199,21 +194,10 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         isOfferingFinalized = true;
         isSaleClosed = true; // Ensure sale is closed when finalized
 
-        emit OfferingFinalized(block.timestamp);
-        emit SaleClosed(totalRaised);
-    }
-
-    /**
-     * @dev Finalize offering early if soft cap is reached. Only token owner can call.
-     */
-    function finalizeOfferingSoftCap() external onlyRole(TOKEN_OWNER_ROLE) {
-        require(totalRaised >= softCap, "Soft cap not reached");
-        require(!isOfferingFinalized, "Already finalized");
-        require(!isOfferingCancelled, "Offering is cancelled");
-        require(!isSaleClosed, "Sale already closed");
-
-        isOfferingFinalized = true;
-        isSaleClosed = true;
+        // Set first payout date in WrappedToken
+        if (apyEnabled && wrappedTokenAddress != address(0)) {
+            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
+        }
 
         emit OfferingFinalized(block.timestamp);
         emit SaleClosed(totalRaised);
@@ -231,57 +215,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         isSaleClosed = true;
 
         // Enable refunds in escrow
-        IEscrow(escrowAddress).enableRefunds(address(this));
-
-        emit OfferingCancelled(block.timestamp);
-    }
-
-    /**
-     * @dev Finalize the offering. Can only be called after end date by admin or token owner.
-     *      Once finalized, users can claim their tokens.
-     */
-    function finalizeOffering() external {
-        require(msg.sender == escrowAddress, "Not authorized to finalize");
-        require(block.timestamp >= endDate, "Sale not ended yet");
-        require(!isOfferingFinalized, "Already finalized");
-        require(!isOfferingCancelled, "Offering is cancelled");
-
-        isOfferingFinalized = true;
-        isSaleClosed = true; // Ensure sale is closed when finalized
-
-        emit OfferingFinalized(block.timestamp);
-        emit SaleClosed(totalRaised);
-    }
-
-    /**
-     * @dev Finalize offering early if soft cap is reached. Only token owner can call.
-     */
-    function finalizeOfferingSoftCap() external onlyRole(TOKEN_OWNER_ROLE) {
-        require(totalRaised >= softCap, "Soft cap not reached");
-        require(!isOfferingFinalized, "Already finalized");
-        require(!isOfferingCancelled, "Offering is cancelled");
-        require(!isSaleClosed, "Sale already closed");
-
-        isOfferingFinalized = true;
-        isSaleClosed = true;
-
-        emit OfferingFinalized(block.timestamp);
-        emit SaleClosed(totalRaised);
-    }
-
-    /**
-     * @dev Cancel the offering and enable refunds. Only token owner can call.
-     *      Can be called anytime before finalization.
-     */
-    function cancelOffering() external onlyRole(TOKEN_OWNER_ROLE) {
-        require(!isOfferingFinalized, "Already finalized");
-        require(!isOfferingCancelled, "Already cancelled");
-
-        isOfferingCancelled = true;
-        isSaleClosed = true;
-
-        // Enable refunds in escrow
-        IEscrow(escrowAddress).enableRefundsByOffering(address(this));
+        IEscrow(escrowAddress).enableRefundsByOffering();
 
         emit OfferingCancelled(block.timestamp);
     }
@@ -398,17 +332,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             (amount * uint256(int256(value)) * 1e18) /
             (10 ** tokenDecimals) /
             1e18;
-    }
-
-    /**
-     * @dev Set new token price. Only owner. Must be positive.
-     */
-    function setTokenPrice(
-        uint256 newPrice
-    ) external onlyRole(TOKEN_OWNER_ROLE) {
-        require(newPrice > 0, "Invalid price");
-        tokenPrice = newPrice;
-        emit TokenPriceUpdated(newPrice);
     }
 
     /**
@@ -546,49 +469,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Grant TOKEN_OWNER_ROLE to other addresses. Only admin.
-     */
-    function grantTokenOwner(
-        address newOwner
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newOwner != address(0), "Zero address");
-        _grantRole(TOKEN_OWNER_ROLE, newOwner);
-    }
-
-    /**
-     * @dev Revoke TOKEN_OWNER_ROLE. Only admin.
-     */
-    function revokeTokenOwner(
-        address owner
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(owner != address(0), "Zero address");
-        _revokeRole(TOKEN_OWNER_ROLE, owner);
-    }
-
-    /**
-     * @dev Update investment limits.
-     */
-    function setInvestmentLimits(
-        uint256 _minInvestment,
-        uint256 _maxInvestment
-    ) external onlyRole(TOKEN_OWNER_ROLE) {
-        require(_minInvestment <= _maxInvestment, "Min > max investment");
-        minInvestment = _minInvestment;
-        maxInvestment = _maxInvestment;
-    }
-
-    /**
-     * @dev Update end date.
-     */
-    function setEndDate(
-        uint256 _endDate
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_endDate > block.timestamp, "Invalid end date");
-        require(_endDate > endDate, "New end date must be after current");
-        endDate = _endDate;
-    }
-
-    /**
      * @dev Finalize offering early if soft cap is reached. Only token owner can call.
      */
     function finalizeOfferingSoftCap() external onlyRole(TOKEN_OWNER_ROLE) {
@@ -600,68 +480,22 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         isOfferingFinalized = true;
         isSaleClosed = true;
 
+        // Set first payout date in WrappedToken
+        if (apyEnabled && wrappedTokenAddress != address(0)) {
+            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
+        }
+
         emit OfferingFinalized(block.timestamp);
         emit SaleClosed(totalRaised);
     }
-
     /**
      * @dev Check if offering can be finalized (end date reached and not already finalized).
      */
     function canFinalize() external view returns (bool) {
-        return (block.timestamp >= endDate || totalRaised >= softCap) && !isOfferingFinalized && !isOfferingCancelled;
-    }
-
-    /**
-     * @dev Check if soft cap has been reached.
-     */
-    function isSoftCapReached() external view returns (bool) {
-        return totalRaised >= softCap;
-    }
-
-    /**
-     * @dev Check if offering can be cancelled by token owner.
-     */
-    function canCancel() external view returns (bool) {
-        return !isOfferingFinalized && !isOfferingCancelled;
-    }
-
-    /**
-     * @dev Get offering status information.
-     */
-    function getOfferingStatus()
-        external
-        view
-        returns (
-            bool saleActive,
-            bool saleClosed,
-            bool finalized,
-            bool cancelled,
-            bool softCapReached,
-            uint256 raised,
-            uint256 softCapAmount,
-            uint256 cap,
-            uint256 endTime
-        )
-    {
-        saleActive =
-            block.timestamp >= startDate &&
-            block.timestamp < endDate &&
-            !isSaleClosed &&
+        return
+            (block.timestamp >= endDate || totalRaised >= softCap) &&
+            !isOfferingFinalized &&
             !isOfferingCancelled;
-        saleClosed = isSaleClosed;
-        finalized = isOfferingFinalized;
-        cancelled = isOfferingCancelled;
-        softCapReached = totalRaised >= softCap;
-        raised = totalRaised;
-        softCapAmount = softCap;
-        cap = fundraisingCap;
-        endTime = endDate;
-    }
-    /**
-     * @dev Check if offering can be finalized (end date reached and not already finalized).
-     */
-    function canFinalize() external view returns (bool) {
-        return (block.timestamp >= endDate || totalRaised >= softCap) && !isOfferingFinalized && !isOfferingCancelled;
     }
 
     /**

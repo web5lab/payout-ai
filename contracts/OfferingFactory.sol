@@ -17,7 +17,6 @@ struct CreateOfferingConfig {
     uint256 endDate;
     bool apyEnabled;
     uint256 softCap;
-    uint256 softCap;
     uint256 fundraisingCap;
     uint256 tokenPrice;
     address tokenOwner;
@@ -26,10 +25,9 @@ struct CreateOfferingConfig {
     address payoutTokenAddress;
     uint256 payoutRate;
     uint256 payoutPeriodDuration; // Duration between payouts (e.g., 30 days = 2592000 seconds)
-    uint256 firstPayoutDate; // When first payout becomes available
-    // Optional custom names - if empty, will use token name + "Wrapped"
     string customWrappedName;
     string customWrappedSymbol;
+    uint256 maturityDate;
 }
 
 /**
@@ -159,8 +157,7 @@ contract OfferingFactory is Ownable {
                 payoutRate: config.payoutRate,
                 offeringContract: address(offering),
                 admin: msg.sender,
-                payoutPeriodDuration: config.payoutPeriodDuration,
-                firstPayoutDate: config.firstPayoutDate
+                payoutPeriodDuration: config.payoutPeriodDuration
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig
@@ -225,11 +222,10 @@ contract OfferingFactory is Ownable {
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
-                payoutRate: config.payoutRate,
+                payoutAPR: config.payoutRate,
                 offeringContract: address(offering),
                 admin: msg.sender,
-                payoutPeriodDuration: config.payoutPeriodDuration,
-                firstPayoutDate: config.firstPayoutDate
+                payoutPeriodDuration: config.payoutPeriodDuration
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig

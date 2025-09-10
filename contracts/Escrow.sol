@@ -18,7 +18,10 @@ contract Escrow is Ownable, ReentrancyGuard {
     address public investmentManager; // New state variable
 
     modifier onlyInvestmentManager() {
-        require(msg.sender == investmentManager, "Only InvestmentManager can call this function");
+        require(
+            msg.sender == investmentManager,
+            "Only InvestmentManager can call this function"
+        );
         _;
     }
 
@@ -84,8 +87,13 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(config.owner != address(0), "Invalid owner");
     }
 
-    function setInvestmentManager(address _investmentManager) external onlyOwner {
-        require(_investmentManager != address(0), "Invalid investment manager address");
+    function setInvestmentManager(
+        address _investmentManager
+    ) external onlyOwner {
+        require(
+            _investmentManager != address(0),
+            "Invalid investment manager address"
+        );
         investmentManager = _investmentManager;
     }
 
@@ -264,9 +272,7 @@ contract Escrow is Ownable, ReentrancyGuard {
     }
 
     // Finalize offering and transfer all funds to offering owner
-    function finalizeOffering(
-        address _offeringContract
-    ) external nonReentrant {
+    function finalizeOffering(address _offeringContract) external nonReentrant {
         require(_offeringContract != address(0), "Invalid offering contract");
         require(
             offerings[_offeringContract].isRegistered,
@@ -280,10 +286,11 @@ contract Escrow is Ownable, ReentrancyGuard {
             !refundsEnabled[_offeringContract],
             "Refunds enabled - cannot finalize"
         );
-        
+
         // Allow either escrow owner OR offering owner to finalize
         require(
-            msg.sender == owner() || msg.sender == offerings[_offeringContract].owner,
+            msg.sender == owner() ||
+                msg.sender == offerings[_offeringContract].owner,
             "Only escrow owner or offering owner can finalize"
         );
 
@@ -342,7 +349,8 @@ contract Escrow is Ownable, ReentrancyGuard {
     function refund(
         address _offeringContract,
         address _investor
-    ) external onlyInvestmentManager nonReentrant { // Add modifier
+    ) external onlyInvestmentManager nonReentrant {
+        // Add modifier
         require(refundsEnabled[_offeringContract], "Refunds not enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
@@ -418,7 +426,9 @@ contract Escrow is Ownable, ReentrancyGuard {
     }
 
     // Escrow owner can enable refunds for a specific offering contract
-    function enableRefundsByOwner(address _offeringContract) external onlyOwner {
+    function enableRefundsByOwner(
+        address _offeringContract
+    ) external onlyOwner {
         require(_offeringContract != address(0), "Invalid offering contract");
         require(
             offerings[_offeringContract].isRegistered,
@@ -433,7 +443,9 @@ contract Escrow is Ownable, ReentrancyGuard {
         emit RefundsEnabled(_offeringContract);
         // Notify InvestmentManager that refunds are enabled for this offering
         if (investmentManager != address(0)) {
-            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(
+                _offeringContract
+            );
         }
     }
 
@@ -452,10 +464,12 @@ contract Escrow is Ownable, ReentrancyGuard {
 
         refundsEnabled[_offeringContract] = true;
         emit RefundsEnabled(_offeringContract);
-        
+
         // Notify InvestmentManager that refunds are enabled for this offering
         if (investmentManager != address(0)) {
-            IInvestmentManager(investmentManager).notifyRefundsEnabled(msg.sender);
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(
+                msg.sender
+            );
         }
     }
 

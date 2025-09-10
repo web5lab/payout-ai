@@ -19,7 +19,6 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * @param offeringContract Address of the contract that handles initial token offerings
  * @param admin Address that will receive admin roles for contract management
  * @param payoutPeriodDuration Duration between payouts in seconds (e.g., 30 days)
- * @param firstPayoutDate Unix timestamp when the first payout becomes available
  */
 struct WrappedTokenConfig {
     string name;
@@ -31,7 +30,6 @@ struct WrappedTokenConfig {
     address offeringContract;
     address admin;
     uint256 payoutPeriodDuration;
-    uint256 firstPayoutDate;
 }
 
 /**
@@ -96,11 +94,11 @@ contract WRAPPEDTOKEN is
     /// @dev Duration between payout periods in seconds
     uint256 public immutable payoutPeriodDuration;
 
-    /// @dev Unix timestamp when the first payout becomes available
-    uint256 public immutable firstPayoutDate;
-
     /// @dev Address of the offering contract authorized to register investments
     address public immutable offeringContract;
+
+    /// @dev Unix timestamp when the first payout becomes available
+    uint256 public firstPayoutDate;
 
     // ============================================
     // STATE VARIABLES
@@ -291,8 +289,6 @@ contract WRAPPEDTOKEN is
         }
         if (config.maturityDate <= block.timestamp)
             revert InvalidConfiguration();
-        if (config.firstPayoutDate <= block.timestamp)
-            revert InvalidConfiguration();
         if (config.payoutPeriodDuration == 0) revert InvalidConfiguration();
         if (config.offeringContract == address(0)) revert ZeroAddress();
         if (config.payoutAPR == 0 || config.payoutAPR > 10000)
@@ -303,7 +299,6 @@ contract WRAPPEDTOKEN is
         payoutToken = IERC20(config.payoutToken);
         maturityDate = config.maturityDate;
         payoutPeriodDuration = config.payoutPeriodDuration;
-        firstPayoutDate = config.firstPayoutDate;
         offeringContract = config.offeringContract;
         payoutAPR = config.payoutAPR;
 
@@ -868,11 +863,40 @@ contract WRAPPEDTOKEN is
     /**
      * @notice Get next available payout time
      */
+    /// @dev Thrown when first payout date is not set
+    error FirstPayoutDateNotSet();
+
+    /// @dev Emitted when the first payout date is set
+    event FirstPayoutDateSet(uint256 firstPayoutDate);
+
     function getNextPayoutTime() public view returns (uint256) {
+        if (firstPayoutDate == 0) {
+            revert FirstPayoutDateNotSet();
+        }
         if (lastPayoutDistributionTime == 0) {
             return firstPayoutDate;
         }
         return lastPayoutDistributionTime + payoutPeriodDuration;
+    }
+
+    /**
+     * @notice Sets the first payout date. Only callable by the offering contract once.
+     * @dev This function is called by the offering contract once the public offering is finalized.
+     *      It sets the firstPayoutDate to the current block.timestamp plus the payoutPeriodDuration.
+     *
+     * Requirements:
+     * - Caller must be the offeringContract.
+     * - firstPayoutDate must not have been set yet (i.e., it's 0).
+     *
+     * Effects:
+     * - Sets the firstPayoutDate.
+     * - Emits a FirstPayoutDateSet event.
+     */
+    function setFirstPayoutDate() external onlyOfferingContract {
+        if (firstPayoutDate != 0) revert InvalidConfiguration(); // Already set
+
+        firstPayoutDate = block.timestamp + payoutPeriodDuration;
+        emit FirstPayoutDateSet(firstPayoutDate);
     }
 
     /**

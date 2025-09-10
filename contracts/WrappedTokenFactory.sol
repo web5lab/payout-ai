@@ -28,10 +28,6 @@ contract WrappedTokenFactory is Ownable {
     ) external returns (address wrappedTokenAddress) {
         // Validate payout period configuration
         require(config.payoutPeriodDuration > 0, "Invalid payout period");
-        require(
-            config.firstPayoutDate > block.timestamp,
-            "First payout must be in future"
-        );
 
         WRAPPEDTOKEN wrappedToken = new WRAPPEDTOKEN(config);
         wrappedTokenAddress = address(wrappedToken);
