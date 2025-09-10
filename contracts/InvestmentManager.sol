@@ -201,17 +201,29 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         uint256 tokensReceivedAmount;
 
         if (_paymentToken == address(0)) {
-            tokensReceivedAmount = offering.invest{value: msg.value}(
+            try offering.invest{value: msg.value}(
                 _paymentToken,
                 msg.sender,
                 _paymentAmount
-            );
+            ) returns (uint256 tokens) {
+                tokensReceivedAmount = tokens;
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Investment failed: ", reason)));
+            } catch (bytes memory) {
+                revert("Investment failed: Unknown error");
+            }
         } else {
-            tokensReceivedAmount = offering.invest(
+            try offering.invest(
                 _paymentToken,
                 msg.sender,
                 _paymentAmount
-            );
+            ) returns (uint256 tokens) {
+                tokensReceivedAmount = tokens;
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Investment failed: ", reason)));
+            } catch (bytes memory) {
+                revert("Investment failed: Unknown error");
+            }
         }
 
         // Emit specialized event for KYB-validated investments
@@ -259,7 +271,13 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         require(depositInfo.token == _token, "Token mismatch for refund");
 
         // Call the refund function on the Escrow contract
-        escrow.refund(_offeringContract, msg.sender);
+        try escrow.refund(_offeringContract, msg.sender) {
+            // Refund successful
+        } catch Error(string memory reason) {
+            revert(string(abi.encodePacked("Refund failed: ", reason)));
+        } catch (bytes memory) {
+            revert("Refund failed: Unknown error");
+        }
 
         // Emit event for subgraph with the actual refunded amount and token
         emit RefundClaimed(
@@ -281,17 +299,29 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         uint256 tokensReceivedAmount;
         // If _paymentToken is address(0), it's a native ETH investment
         if (_paymentToken == address(0)) {
-            tokensReceivedAmount = offering.invest{value: msg.value}(
+            try offering.invest{value: msg.value}(
                 _paymentToken,
                 msg.sender,
                 _paymentAmount
-            );
+            ) returns (uint256 tokens) {
+                tokensReceivedAmount = tokens;
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Investment failed: ", reason)));
+            } catch (bytes memory) {
+                revert("Investment failed: Unknown error");
+            }
         } else {
-            tokensReceivedAmount = offering.invest(
+            try offering.invest(
                 _paymentToken,
                 msg.sender,
                 _paymentAmount
-            );
+            ) returns (uint256 tokens) {
+                tokensReceivedAmount = tokens;
+            } catch Error(string memory reason) {
+                revert(string(abi.encodePacked("Investment failed: ", reason)));
+            } catch (bytes memory) {
+                revert("Investment failed: Unknown error");
+            }
         }
 
         // Emit event for subgraph
@@ -306,7 +336,16 @@ contract InvestmentManager is Ownable, IInvestmentManager {
 
     function claimInvestmentTokens(address _offeringAddress) external {
         Offering offering = Offering(payable(_offeringAddress));
-        uint256 claimedAmount = offering.claimTokens(msg.sender);
+        uint256 claimedAmount;
+        
+        try offering.claimTokens(msg.sender) returns (uint256 amount) {
+            claimedAmount = amount;
+        } catch Error(string memory reason) {
+            revert(string(abi.encodePacked("Token claim failed: ", reason)));
+        } catch (bytes memory) {
+            revert("Token claim failed: Unknown error");
+        }
+        
         emit TokensClaimed(msg.sender, _offeringAddress, claimedAmount);
     }
 
@@ -357,9 +396,38 @@ contract InvestmentManager is Ownable, IInvestmentManager {
     function rescueNative(uint256 _amount, address _to) external onlyOwner {
         require(_amount > 0, "Amount must be greater than 0");
         require(_to != address(0), "Invalid recipient address");
-        (bool success, ) = payable(_to).call{value: _amount}("");
-        require(success, "Native rescue transfer failed");
+        
+        _safeTransferETH(_to, _amount);
     }
 
     receive() external payable {}
+
+    /**
+     * @dev Safe ETH transfer with gas limit and proper error handling
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _safeTransferETH(address to, uint256 amount) internal {
+        require(to != address(0), "Invalid recipient");
+        require(address(this).balance >= amount, "Insufficient ETH balance");
+        
+        // Use call with gas limit to prevent griefing
+        (bool success, bytes memory returnData) = payable(to).call{
+            value: amount,
+            gas: 50000 // Reasonable gas limit for ETH transfers
+        }("");
+        
+        if (!success) {
+            // If call failed, check if it's due to gas or other reason
+            if (returnData.length > 0) {
+                // Bubble up the revert reason
+                assembly {
+                    let returnDataSize := mload(returnData)
+                    revert(add(32, returnData), returnDataSize)
+                }
+            } else {
+                revert("ETH transfer failed");
+            }
+        }
+    }
 }
