@@ -127,12 +127,14 @@ contract WRAPPEDTOKEN is
      * @param deposited Amount of peggedToken deposited by the investor
      * @param usdtValue USDT value of the investment (used for payout calculations)
      * @param hasClaimedFinalTokens Whether the investor has redeemed their tokens at maturity
+     * @param emergencyUnlocked Whether the investor used emergency unlock feature
      * @param totalPayoutsClaimed Total amount of payouts claimed across all periods
      */
     struct Investor {
         uint256 deposited;
         uint256 usdtValue;
         bool hasClaimedFinalTokens;
+        bool emergencyUnlocked;
         uint256 totalPayoutsClaimed;
     }
 
@@ -561,7 +563,7 @@ contract WRAPPEDTOKEN is
 
         // Checks: Validate user eligibility
         if (investor.deposited == 0) revert NoDeposit();
-        if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
+        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked) revert AlreadyClaimed();
 
         uint256 totalClaimable = 0;
         uint256 lastClaimed = userLastClaimedPeriod[user];
@@ -580,6 +582,11 @@ contract WRAPPEDTOKEN is
                 uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(user, period);
 
                 if (userUSDTAtPeriod > 0) {
+                    // Additional safety check to prevent division by zero
+                    if (totalUSDTAtPeriod == 0) {
+                        continue; // Skip this period if total USDT is zero
+                    }
+                    
                     // Calculate share with overflow protection
                     uint256 userShare = Math.mulDiv(
                         periodFunds,
@@ -625,6 +632,11 @@ contract WRAPPEDTOKEN is
         address user,
         uint256 period
     ) internal view returns (uint256) {
+        // Safety check: prevent division by zero in calling functions
+        if (totalUSDTSnapshot[period] == 0) {
+            return 0;
+        }
+        
         // If we have a snapshot, use it
         uint256 snapshotUSDT = userUSDTSnapshot[user][period];
         if (snapshotUSDT > 0) {
@@ -668,7 +680,7 @@ contract WRAPPEDTOKEN is
         )
     {
         Investor storage investor = investors[_user];
-        if (investor.deposited == 0) {
+        if (investor.deposited == 0 || investor.emergencyUnlocked) {
             return (0, 0, 0, 0, new uint256[](0), new uint256[](0));
         }
 
@@ -709,6 +721,11 @@ contract WRAPPEDTOKEN is
                 uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(_user, period);
 
                 if (userUSDTAtPeriod > 0) {
+                    // Additional safety check to prevent division by zero
+                    if (totalUSDTAtPeriod == 0) {
+                        continue; // Skip this period
+                    }
+                    
                     // Calculate share with overflow protection
                     uint256 userShare = Math.mulDiv(
                         periodFunds,
@@ -764,6 +781,7 @@ contract WRAPPEDTOKEN is
 
         // Checks: Validate user eligibility
         if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
+        if (investor.emergencyUnlocked) revert AlreadyClaimed();
         if (investor.deposited == 0) revert NoDeposit();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
@@ -836,7 +854,7 @@ contract WRAPPEDTOKEN is
 
         Investor storage investor = investors[msg.sender];
         if (investor.deposited == 0) revert NoDeposit();
-        if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
+        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked) revert AlreadyClaimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
         uint256 depositedAmount = investor.deposited;
@@ -855,7 +873,10 @@ contract WRAPPEDTOKEN is
         uint256 amountToReturn = depositedAmount - penaltyAmount;
 
         // Update state before external calls
-        investor.hasClaimedFinalTokens = true;
+        investor.emergencyUnlocked = true;
+        // Clear investor data since they've exited early
+        investor.deposited = 0;
+        investor.usdtValue = 0;
         totalEscrowed -= depositedAmount;
         totalUSDTInvested -= userUSDTValue;
 

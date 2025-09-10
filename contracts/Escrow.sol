@@ -139,6 +139,14 @@ contract Escrow is Ownable, ReentrancyGuard {
             !offerings[_offeringContract].isFinalized,
             "Offering already finalized"
         );
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Offering already finalized"
+        );
 
         // Update or add deposit
         DepositInfo storage existingDeposit = deposits[_offeringContract][
@@ -182,6 +190,14 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(!refundsEnabled[_offeringContract], "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Offering already finalized"
+        );
         require(
             offerings[_offeringContract].isRegistered,
             "Offering not registered"
