@@ -7,497 +7,982 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
-struct WrapedTokenConfig {
+/**
+ * @title WrappedTokenConfig
+ * @dev Configuration structure for initializing wrapped tokens
+ * @param name The name of the wrapped token (e.g., "Wrapped USDT Q1 2025")
+ * @param symbol The symbol of the wrapped token (e.g., "wUSDT-Q1-25")
+ * @param peggedToken Address of the underlying token to be wrapped (e.g., USDT)
+ * @param payoutToken Address of the token used for periodic payouts (e.g., USDC)
+ * @param maturityDate Unix timestamp when the wrapped token matures and can be redeemed
+ * @param payoutAPR Annual Percentage Rate for payouts in basis points (1200 = 12% APR)
+ * @param offeringContract Address of the contract that handles initial token offerings
+ * @param admin Address that will receive admin roles for contract management
+ * @param payoutPeriodDuration Duration between payouts in seconds (e.g., 30 days)
+ * @param firstPayoutDate Unix timestamp when the first payout becomes available
+ */
+struct WrappedTokenConfig {
     string name;
     string symbol;
     address peggedToken;
     address payoutToken;
     uint256 maturityDate;
-    uint256 payoutRate;
+    uint256 payoutAPR;
     address offeringContract;
     address admin;
-    uint256 payoutPeriodDuration; // Duration in seconds (e.g., 30 days, 1 year)
-    uint256 firstPayoutDate; // When first payout becomes available
+    uint256 payoutPeriodDuration;
+    uint256 firstPayoutDate;
 }
 
-contract WRAPEDTOKEN is
+/**
+ * @title WRAPPEDTOKEN
+ * @dev A wrapped token contract that provides periodic payouts based on USDT investment value
+ *
+ * Key Features:
+ * - Wraps underlying tokens (e.g., USDT) with a maturity date
+ * - Provides periodic payouts in a different token (e.g., USDC)
+ * - Calculates payout distribution based on USDT investment value rather than token balance
+ * - Supports emergency unlock with configurable penalties
+ * - Non-transferable wrapped tokens to maintain investment integrity
+ * - Role-based access control for administrative functions
+ *
+ * Workflow:
+ * 1. Users invest through the offering contract
+ * 2. Wrapped tokens are minted representing their investment
+ * 3. Periodic payouts are distributed based on USDT investment proportions
+ * 4. At maturity, users can redeem their original wrapped tokens
+ *
+ * @author [Your Name/Organization]
+ * @notice This contract handles wrapped token investments with periodic payouts
+ */
+contract WRAPPEDTOKEN is
     ERC20,
     ERC20Burnable,
     AccessControl,
-    Pausable,
-    ReentrancyGuard
+    ReentrancyGuard,
+    Pausable
 {
-    enum PayoutFrequency {
-        Daily,
-        Monthly,
-        Yearly
-    }
+    // ============================================
+    // CONSTANTS AND IMMUTABLE VARIABLES
+    // ============================================
 
-    // Role definitions
+    /// @dev Role identifier for addresses authorized to distribute payouts
     bytes32 public constant PAYOUT_ADMIN_ROLE = keccak256("PAYOUT_ADMIN_ROLE");
 
+    /// @dev Role identifier for addresses authorized to pause/unpause the contract
+    bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
+
+    /// @dev Precision scale for calculations to avoid rounding errors (18 decimals)
+    uint256 private constant PRECISION_SCALE = 1e18;
+
+    /// @dev Maximum emergency unlock penalty (50% in basis points)
+    uint256 private constant MAX_PENALTY = 5000;
+
+    /// @dev Basis points denominator (100% = 10000 basis points)
+    uint256 private constant BASIS_POINTS = 10000;
+
+    /// @dev Number of seconds in a year for APR calculations
+    uint256 private constant SECONDS_PER_YEAR = 365 days;
+
+    /// @dev The underlying token that users deposit (e.g., USDT)
     IERC20 public immutable peggedToken;
-    IERC20 public immutable payoutToken; // Token used for payouts
+
+    /// @dev The token used for periodic payouts (e.g., USDC)
+    IERC20 public immutable payoutToken;
+
+    /// @dev Unix timestamp when wrapped tokens mature and can be redeemed
     uint256 public immutable maturityDate;
-    uint256 public immutable payoutRate; // Payout rate as a percentage (e.g., 100 for 1%)
-    uint256 public immutable payoutPeriodDuration; // Duration between payouts in seconds
-    uint256 public immutable firstPayoutDate; // When first payout becomes available
-    uint256 public totalEscrowed;
+
+    /// @dev Duration between payout periods in seconds
+    uint256 public immutable payoutPeriodDuration;
+
+    /// @dev Unix timestamp when the first payout becomes available
+    uint256 public immutable firstPayoutDate;
+
+    /// @dev Address of the offering contract authorized to register investments
     address public immutable offeringContract;
 
-    // Emergency unlock settings
-    bool public emergencyUnlockEnabled;
-    uint256 public emergencyUnlockPenalty; // Penalty percentage (e.g., 1000 = 10%)
-    
-    // Payout period tracking
-    uint256 public currentPayoutPeriod; // Current payout period number
-    uint256 public lastPayoutDistributionTime; // Last time admin distributed payouts
-    mapping(uint256 => uint256) public payoutFundsPerPeriod; // period => amount added
-    mapping(address => uint256) public userLastClaimedPeriod; // user => last claimed period
+    // ============================================
+    // STATE VARIABLES
+    // ============================================
 
+    /// @dev Current Annual Percentage Rate for payouts (modifiable by admin)
+    uint256 public payoutAPR;
+
+    /// @dev Total amount of peggedToken held in escrow
+    uint256 public totalEscrowed;
+
+    /// @dev Total USDT value of all investments (used for payout calculations)
+    uint256 public totalUSDTInvested;
+
+    /// @dev Whether emergency unlock feature is enabled
+    bool public emergencyUnlockEnabled;
+
+    /// @dev Penalty percentage for emergency unlocks (in basis points)
+    uint256 public emergencyUnlockPenalty;
+
+    /// @dev Current payout period number (starts at 0)
+    uint256 public currentPayoutPeriod;
+
+    /// @dev Timestamp of the last payout distribution
+    uint256 public lastPayoutDistributionTime;
+
+    // ============================================
+    // MAPPINGS
+    // ============================================
+
+    /// @dev Amount of payout tokens distributed for each period
+    mapping(uint256 => uint256) public payoutFundsPerPeriod;
+
+    /// @dev Total USDT invested at the time of each payout distribution
+    mapping(uint256 => uint256) public totalUSDTSnapshot;
+
+    /// @dev Last payout period claimed by each user
+    mapping(address => uint256) public userLastClaimedPeriod;
+
+    /// @dev User's USDT investment value at each period (for fair distribution)
+    mapping(address => mapping(uint256 => uint256)) public userUSDTSnapshot;
+
+    /**
+     * @dev Struct containing investor information
+     * @param deposited Amount of peggedToken deposited by the investor
+     * @param usdtValue USDT value of the investment (used for payout calculations)
+     * @param hasClaimedFinalTokens Whether the investor has redeemed their tokens at maturity
+     * @param totalPayoutsClaimed Total amount of payouts claimed across all periods
+     */
     struct Investor {
         uint256 deposited;
-        bool hasClaimedTokens;
-        uint256 lastPayoutTime;
+        uint256 usdtValue;
+        bool hasClaimedFinalTokens;
         uint256 totalPayoutsClaimed;
-        PayoutFrequency payoutFrequency;
-        uint256 payoutAmountPerPeriod; // Amount to be paid out per period
-        uint256 totalPayoutBalance; // Total payout balance available to claim
-        bool emergencyUnlocked; // Track if user used emergency unlock
-        uint256 lastClaimedPeriod; // Last period user claimed payout
     }
 
+    /// @dev Mapping of investor addresses to their investment information
     mapping(address => Investor) public investors;
-    uint256 public totalPayoutFunds; // Total payout funds available in contract
 
+    // ============================================
+    // CUSTOM ERRORS
+    // ============================================
+
+    /// @dev Thrown when attempting to transfer wrapped tokens (not allowed)
     error NoTransfers();
-    error InvalidAmt();
-    error InvalidToken();
-    error Matured();
-    error NotMatured();
-    error NoDeposit();
-    error Claimed();
-    error TransferFailed();
-    error NoPayout();
-    error PeriodNotElapsed();
-    error InsufficientFunds();
-    error UnlockDisabled();
-    error AlreadyUnlocked();
-    error InvalidPenalty();
-    error InvalidStablecoin();
-    error PayoutPeriodNotElapsed();
-    error PayoutNotAvailable();
-    error InvalidPayoutPeriod();
 
-    event PayoutFundsAdded(uint256 amount, uint256 totalFunds);
-    event PayoutClaimed(
-        address indexed user,
+    /// @dev Thrown when providing invalid amounts (zero or negative)
+    error InvalidAmount();
+
+    /// @dev Thrown when providing invalid token addresses
+    error InvalidToken();
+
+    /// @dev Thrown when trying to perform pre-maturity actions after maturity
+    error Matured();
+
+    /// @dev Thrown when trying to perform post-maturity actions before maturity
+    error NotMatured();
+
+    /// @dev Thrown when user has no deposit/investment
+    error NoDeposit();
+
+    /// @dev Thrown when trying to claim already claimed tokens/payouts
+    error AlreadyClaimed();
+
+    /// @dev Thrown when token transfers fail
+    error TransferFailed();
+
+    /// @dev Thrown when there are no payouts available to claim
+    error NoPayout();
+
+    /// @dev Thrown when contract has insufficient funds for operation
+    error InsufficientFunds();
+
+    /// @dev Thrown when emergency unlock is disabled
+    error UnlockDisabled();
+
+    /// @dev Thrown when providing invalid penalty percentages
+    error InvalidPenalty();
+
+    /// @dev Thrown when providing invalid stablecoin addresses
+    error InvalidStablecoin();
+
+    /// @dev Thrown when payout period is not yet available
+    error PayoutNotAvailable();
+
+    /// @dev Thrown when contract configuration is invalid
+    error InvalidConfiguration();
+
+    /// @dev Thrown when providing zero addresses where they're not allowed
+    error ZeroAddress();
+
+    /// @dev Thrown when caller is not authorized for the operation
+    error Unauthorized();
+
+    /// @dev Thrown when providing invalid APR values
+    error InvalidAPR();
+
+    // ============================================
+    // EVENTS
+    // ============================================
+
+    /// @dev Emitted when the payout APR is updated
+    event PayoutAPRUpdated(uint256 oldAPR, uint256 newAPR);
+
+    /// @dev Emitted when payouts are distributed for a period
+    event PayoutDistributed(
+        uint256 indexed period,
         uint256 amount,
-        uint256 remainingBalance
+        uint256 totalUSDTAtDistribution
     );
-    event IndividualPayoutClaimed(address indexed user, uint256 amount);
+
+    /// @dev Emitted when a user claims payouts
+    event PayoutClaimed(address indexed user, uint256 amount, uint256 period);
+
+    /// @dev Emitted when a user redeems their tokens at maturity
     event FinalTokensClaimed(address indexed user, uint256 amount);
+
+    /// @dev Emitted when emergency unlock is enabled
     event EmergencyUnlockEnabled(uint256 penalty);
+
+    /// @dev Emitted when emergency unlock is disabled
+    event EmergencyUnlockDisabled();
+
+    /// @dev Emitted when a user uses emergency unlock
     event EmergencyUnlockUsed(
         address indexed user,
         uint256 amount,
         uint256 penalty
     );
-    event PayoutPeriodStarted(uint256 indexed period, uint256 startTime);
-    event PayoutDistributed(uint256 indexed period, uint256 amount, uint256 totalFunds);
 
+    /// @dev Emitted when an investment is registered
+    event InvestmentRegistered(
+        address indexed user,
+        uint256 tokenAmount,
+        uint256 usdtValue
+    );
+
+    // ============================================
+    // CONSTRUCTOR
+    // ============================================
+
+    /**
+     * @dev Initialize the wrapped token contract with configuration parameters
+     * @param config WrappedTokenConfig struct containing all initialization parameters
+     *
+     * Requirements:
+     * - All token addresses and admin address must be non-zero
+     * - Maturity date must be in the future
+     * - First payout date must be in the future
+     * - Payout period duration must be greater than zero
+     * - APR must be between 0.01% and 100%
+     *
+     * Effects:
+     * - Sets up all immutable contract parameters
+     * - Grants admin roles to the specified admin address
+     * - Initializes payout period tracking
+     */
     constructor(
-        WrapedTokenConfig memory config
+        WrappedTokenConfig memory config
     ) ERC20(config.name, config.symbol) {
+        // Input validation
         if (
-            config.peggedToken == address(0) || config.payoutToken == address(0)
-        ) revert InvalidStablecoin();
+            config.peggedToken == address(0) ||
+            config.payoutToken == address(0) ||
+            config.admin == address(0)
+        ) {
+            revert InvalidStablecoin();
+        }
+        if (config.maturityDate <= block.timestamp)
+            revert InvalidConfiguration();
+        if (config.firstPayoutDate <= block.timestamp)
+            revert InvalidConfiguration();
+        if (config.payoutPeriodDuration == 0) revert InvalidConfiguration();
+        if (config.offeringContract == address(0)) revert ZeroAddress();
+        if (config.payoutAPR == 0 || config.payoutAPR > 10000)
+            revert InvalidAPR(); // Max 100% APR
+
+        // Set immutable variables
         peggedToken = IERC20(config.peggedToken);
         payoutToken = IERC20(config.payoutToken);
         maturityDate = config.maturityDate;
-        payoutRate = config.payoutRate;
         payoutPeriodDuration = config.payoutPeriodDuration;
         firstPayoutDate = config.firstPayoutDate;
         offeringContract = config.offeringContract;
+        payoutAPR = config.payoutAPR;
 
-        // Grant roles to the deployer (WrappedTokenFactory)
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(PAYOUT_ADMIN_ROLE, msg.sender);
-        
+        // Grant roles to the specified admin, not the deployer
+        _grantRole(DEFAULT_ADMIN_ROLE, config.admin);
+        _grantRole(PAYOUT_ADMIN_ROLE, config.admin);
+        _grantRole(PAUSE_ROLE, config.admin);
+
         // Initialize payout period tracking
         currentPayoutPeriod = 0;
         lastPayoutDistributionTime = 0;
-
-        // Also grant DEFAULT_ADMIN_ROLE to the offering contract's deployer
-        // This is needed because the factory deploys the token, but we need the original deployer to have admin rights
-        // We'll handle this in the factory instead
     }
 
+    // ============================================
+    // MODIFIERS
+    // ============================================
+
+    /**
+     * @dev Restricts function access to the offering contract only
+     */
     modifier onlyOfferingContract() {
-        if (msg.sender != offeringContract)
-            revert("Caller is not the offering contract");
+        if (msg.sender != offeringContract) revert Unauthorized();
         _;
     }
 
+    /**
+     * @dev Restricts function access to after maturity date
+     */
     modifier onlyAfterMaturity() {
         if (block.timestamp < maturityDate) revert NotMatured();
         _;
     }
 
-    function _getPayoutPeriodSeconds(
-        PayoutFrequency _frequency
-    ) internal pure returns (uint256) {
-        if (_frequency == PayoutFrequency.Daily) {
-            return 1 days;
-        } else if (_frequency == PayoutFrequency.Monthly) {
-            return 30 days;
-        } else if (_frequency == PayoutFrequency.Yearly) {
-            return 365 days;
-        }
-        return 0;
+    /**
+     * @dev Validates that provided address is not zero address
+     * @param _addr Address to validate
+     */
+    modifier validAddress(address _addr) {
+        if (_addr == address(0)) revert ZeroAddress();
+        _;
     }
 
+    // ============================================
+    // INVESTMENT FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Register an investment from the offering contract
+     * @dev Only callable by the authorized offering contract
+     * @param _user The investor's address
+     * @param amount The amount of peggedToken to invest
+     * @param usdtValue The USDT value of the investment (used for payout calculations)
+     *
+     * Requirements:
+     * - Contract must not be paused
+     * - User address must be valid (non-zero)
+     * - Amount and USDT value must be greater than zero
+     * - Offering contract must have approved this contract for token transfer
+     *
+     * Effects:
+     * - Transfers peggedToken from offering contract to this contract
+     * - Mints wrapped tokens to the user
+     * - Updates total escrowed amount and total USDT invested
+     * - Records/updates investor information
+     * - Snapshots user USDT value for existing payout periods
+     *
+     * @custom:security This function follows the Checks-Effects-Interactions pattern
+     */
     function registerInvestment(
         address _user,
         uint256 amount,
-        PayoutFrequency _payoutFrequency
-    ) external onlyOfferingContract {
-        if (amount == 0) revert InvalidAmt();
+        uint256 usdtValue
+    ) external onlyOfferingContract whenNotPaused validAddress(_user) {
+        if (amount == 0 || usdtValue == 0) revert InvalidAmount();
 
-        bool success = peggedToken.transferFrom(
-            offeringContract,
-            address(this),
-            amount
-        );
-        if (!success) revert TransferFailed();
+        // Interaction: Transfer tokens from offering contract first
+        if (
+            !peggedToken.transferFrom(offeringContract, address(this), amount)
+        ) {
+            revert TransferFailed();
+        }
 
+        // Effects: Update state after successful transfer
+        totalEscrowed += amount;
+        totalUSDTInvested += usdtValue;
+
+        // Effects: Mint wrapped tokens to user
         _mint(_user, amount);
 
-        uint256 payoutPerPeriod = (amount * payoutRate) / 10000;
+        // Effects: Record/Update investment information
+        investors[_user].deposited += amount;
+        investors[_user].usdtValue += usdtValue;
 
-        investors[_user] = Investor({
-            deposited: amount,
-            hasClaimedTokens: false,
-            lastPayoutTime: block.timestamp,
-            totalPayoutsClaimed: 0,
-            payoutFrequency: _payoutFrequency,
-            payoutAmountPerPeriod: payoutPerPeriod,
-            totalPayoutBalance: 0, // Will be updated when admin adds payout funds
-            emergencyUnlocked: false,
-            lastClaimedPeriod: 0
-        });
-
-        totalEscrowed += amount;
-    }
-
-    // Individual payout claim (original functionality)
-    function claimPayout() external {
-        Investor storage user = investors[msg.sender];
-        if (user.deposited == 0) revert NoDeposit();
-        if (user.hasClaimedTokens) revert Claimed();
-
-        uint256 payoutPeriodSeconds = _getPayoutPeriodSeconds(
-            user.payoutFrequency
-        );
-        if (payoutPeriodSeconds == 0) revert NoPayout();
-
-        uint256 timeElapsed = block.timestamp - user.lastPayoutTime;
-        if (timeElapsed < payoutPeriodSeconds) revert PayoutPeriodNotElapsed();
-
-        uint256 periodsPassed = timeElapsed / payoutPeriodSeconds;
-        uint256 totalPayoutDue = periodsPassed * user.payoutAmountPerPeriod;
-
-        if (user.totalPayoutsClaimed + totalPayoutDue > user.deposited) {
-            totalPayoutDue = user.deposited - user.totalPayoutsClaimed;
-        }
-
-        if (totalPayoutDue == 0) revert NoPayout();
-
-        user.lastPayoutTime += periodsPassed * payoutPeriodSeconds;
-        user.totalPayoutsClaimed += totalPayoutDue;
-
-        if (!payoutToken.transfer(msg.sender, totalPayoutDue))
-            revert TransferFailed();
-
-        emit IndividualPayoutClaimed(msg.sender, totalPayoutDue);
-    }
-
-    // Admin adds payout funds and distributes to all investors proportionally
-    function distributePayoutForPeriod(
-        uint256 _amount
-    ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant {
-        if (_amount == 0) revert InvalidAmt();
-        
-        // Check if we can start a new payout period
-        uint256 nextPayoutTime = getNextPayoutTime();
-        if (block.timestamp < nextPayoutTime) revert PayoutNotAvailable();
-        
-        // Start new payout period
-        currentPayoutPeriod += 1;
-        lastPayoutDistributionTime = block.timestamp;
-        payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
-
-        // Transfer payout tokens to this contract
-        if (!payoutToken.transferFrom(msg.sender, address(this), _amount))
-            revert TransferFailed();
-
-        totalPayoutFunds += _amount;
-
-        emit PayoutPeriodStarted(currentPayoutPeriod, block.timestamp);
-        emit PayoutDistributed(currentPayoutPeriod, _amount, totalPayoutFunds);
-    }
-
-    // User claims their full available payout balance
-    function claimAvailablePayouts() external nonReentrant {
-        Investor storage user = investors[msg.sender];
-        if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert Claimed();
-        
-        uint256 userBalance = balanceOf(msg.sender);
-        if (userBalance == 0) revert NoDeposit();
-        
-        // Calculate claimable amount from unclaimed periods
-        uint256 totalClaimable = 0;
-        uint256 totalSupply = totalSupply();
-        
-        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
-            uint256 periodFunds = payoutFundsPerPeriod[period];
-            if (periodFunds > 0 && totalSupply > 0) {
-                uint256 userShare = (periodFunds * userBalance) / totalSupply;
-                totalClaimable += userShare;
+        // Effects: Snapshot user USDT value for existing periods (lazy snapshotting)
+        if (currentPayoutPeriod > 0) {
+            for (uint256 i = 1; i <= currentPayoutPeriod; i++) {
+                if (userUSDTSnapshot[_user][i] == 0) {
+                    userUSDTSnapshot[_user][i] = investors[_user].usdtValue;
+                }
             }
         }
-        
+
+        emit InvestmentRegistered(_user, amount, usdtValue);
+    }
+
+    // ============================================
+    // PAYOUT CALCULATION FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Calculate the required payout tokens for the next period
+     * @dev Pure calculation function that doesn't modify state
+     * @return requiredAmount The amount of payout tokens needed for next distribution
+     * @return periodAPR The APR for this specific period (adjusted for period duration)
+     *
+     * Calculation Logic:
+     * - Period APR = (Annual APR * Period Duration) / Seconds Per Year
+     * - Required Amount = (Total USDT Invested * Period APR) / Basis Points
+     *
+     * Example: If total USDT invested is $100,000, APR is 12%, and period is 30 days:
+     * - Period APR = (1200 * 30 days) / 365 days ≈ 98.63 basis points
+     * - Required Amount = ($100,000 * 98.63) / 10000 ≈ $986.30
+     */
+    function calculateRequiredPayoutTokens()
+        external
+        view
+        returns (uint256 requiredAmount, uint256 periodAPR)
+    {
+        if (totalUSDTInvested == 0) {
+            return (0, 0);
+        }
+
+        // Calculate APR for this specific period based on duration
+        periodAPR = (payoutAPR * payoutPeriodDuration) / SECONDS_PER_YEAR;
+
+        // Calculate required payout based on total USDT invested
+        requiredAmount = (totalUSDTInvested * periodAPR) / BASIS_POINTS;
+
+        return (requiredAmount, periodAPR);
+    }
+
+    /**
+     * @notice Get expected payout for a specific user for the next period
+     * @dev Estimation function for UI/frontend usage
+     * @param _user Address of the user to calculate payout for
+     * @return expectedPayout Estimated payout amount for the user
+     *
+     * Calculation Logic:
+     * - User's share = User USDT Value / Total USDT Invested
+     * - Expected Payout = User USDT Value * Period APR / Basis Points
+     */
+    function getExpectedPayoutForUser(
+        address _user
+    ) external view returns (uint256 expectedPayout) {
+        Investor storage investor = investors[_user];
+        if (investor.usdtValue == 0 || totalUSDTInvested == 0) {
+            return 0;
+        }
+
+        // Calculate period APR
+        uint256 periodAPR = (payoutAPR * payoutPeriodDuration) /
+            SECONDS_PER_YEAR;
+
+        // Calculate expected payout based on user's USDT share
+        expectedPayout = (investor.usdtValue * periodAPR) / BASIS_POINTS;
+
+        return expectedPayout;
+    }
+
+    // ============================================
+    // PAYOUT DISTRIBUTION FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Distribute payout tokens for a new period (admin only)
+     * @dev Only callable by addresses with PAYOUT_ADMIN_ROLE
+     * @param _amount Amount of payout tokens to distribute
+     *
+     * Requirements:
+     * - Caller must have PAYOUT_ADMIN_ROLE
+     * - Contract must not be paused
+     * - Amount must be greater than zero
+     * - Current time must be >= next payout time
+     * - Admin must have approved this contract for payout token transfer
+     *
+     * Effects:
+     * - Transfers payout tokens from admin to contract
+     * - Increments current payout period
+     * - Updates last distribution time
+     * - Takes snapshot of total USDT invested for fair distribution
+     * - Records payout funds for the period
+     *
+     * @custom:security Uses nonReentrant to prevent reentrancy attacks
+     * @custom:security Follows Checks-Effects-Interactions pattern
+     */
+    function distributePayoutForPeriod(
+        uint256 _amount
+    ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant whenNotPaused {
+        if (_amount == 0) revert InvalidAmount();
+
+        // Checks: Verify we can start a new payout period
+        uint256 nextPayoutTime = getNextPayoutTime();
+        if (block.timestamp < nextPayoutTime) revert PayoutNotAvailable();
+
+        // Interactions: Transfer tokens before state changes
+        if (!payoutToken.transferFrom(msg.sender, address(this), _amount)) {
+            revert TransferFailed();
+        }
+
+        // Effects: Update state after successful transfer
+        currentPayoutPeriod += 1;
+        lastPayoutDistributionTime = block.timestamp;
+
+        // Effects: Take snapshot of current total USDT invested for fair distribution
+        totalUSDTSnapshot[currentPayoutPeriod] = totalUSDTInvested;
+        payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
+
+        // Note: User USDT snapshots are handled lazily in getUserUSDTAtPeriod()
+        // This approach saves gas during distribution and only snapshots when needed
+
+        emit PayoutDistributed(currentPayoutPeriod, _amount, totalUSDTInvested);
+    }
+
+    // ============================================
+    // PAYOUT CLAIMING FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Claim all available payouts for the caller
+     * @dev Calculates and distributes payouts based on USDT investment proportions
+     *
+     * Requirements:
+     * - Contract must not be paused
+     * - User must have a deposit
+     * - User must not have already claimed final tokens
+     * - There must be unclaimed payouts available
+     *
+     * Effects:
+     * - Calculates total claimable amount from all unclaimed periods
+     * - Updates user's last claimed period
+     * - Updates user's total payouts claimed
+     * - Transfers payout tokens to user
+     *
+     * Calculation Logic:
+     * - For each unclaimed period:
+     *   - Get user's USDT value at that period
+     *   - Calculate user's share = (Period Funds * User USDT) / Total USDT at Period
+     *   - Add to total claimable amount
+     *
+     * @custom:security Uses nonReentrant to prevent reentrancy attacks
+     * @custom:security Follows Checks-Effects-Interactions pattern
+     */
+    function claimAvailablePayouts() external nonReentrant whenNotPaused {
+        address user = msg.sender;
+        Investor storage investor = investors[user];
+
+        // Checks: Validate user eligibility
+        if (investor.deposited == 0) revert NoDeposit();
+        if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
+
+        uint256 totalClaimable = 0;
+        uint256 lastClaimed = userLastClaimedPeriod[user];
+
+        // Checks/Effects: Calculate claimable amount from unclaimed periods
+        for (
+            uint256 period = lastClaimed + 1;
+            period <= currentPayoutPeriod;
+            period++
+        ) {
+            uint256 periodFunds = payoutFundsPerPeriod[period];
+            uint256 totalUSDTAtPeriod = totalUSDTSnapshot[period];
+
+            if (periodFunds > 0 && totalUSDTAtPeriod > 0) {
+                // Get user USDT value at the time of distribution
+                uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(user, period);
+
+                if (userUSDTAtPeriod > 0) {
+                    // Calculate share based on USDT value proportion
+                    uint256 userShare = (periodFunds *
+                        userUSDTAtPeriod *
+                        PRECISION_SCALE) /
+                        totalUSDTAtPeriod /
+                        PRECISION_SCALE;
+                    totalClaimable += userShare;
+                }
+            }
+        }
+
         if (totalClaimable == 0) revert NoPayout();
-        
-        // Update user's last claimed period
-        user.lastClaimedPeriod = currentPayoutPeriod;
-        user.totalPayoutBalance += totalClaimable;
-        
-        // Ensure we don't try to transfer more than the contract has
+
+        // Effects: Update state before external call
+        userLastClaimedPeriod[user] = currentPayoutPeriod;
+        investor.totalPayoutsClaimed += totalClaimable;
+
+        // Checks: Ensure we don't exceed contract balance (safety check)
         uint256 contractBalance = payoutToken.balanceOf(address(this));
         if (totalClaimable > contractBalance) {
             totalClaimable = contractBalance;
         }
-        
-        if (!payoutToken.transfer(msg.sender, totalClaimable))
+
+        // Interactions: External call last
+        if (!payoutToken.transfer(user, totalClaimable)) {
             revert TransferFailed();
+        }
 
-        emit PayoutClaimed(msg.sender, totalClaimable, 0);
-    }
-    
-    // Legacy function for backwards compatibility
-    function claimTotalPayout() external {
-        claimAvailablePayouts();
-    }
-    
-    // Legacy function for backwards compatibility  
-    function addPayoutFunds(uint256 _amount) external {
-        distributePayoutForPeriod(_amount);
+        emit PayoutClaimed(user, totalClaimable, currentPayoutPeriod);
     }
 
-    // Get user's payout balance including unclaimed periods
-    function getUserPayoutBalance(
+    /**
+     * @dev Get user's USDT value at a specific period with lazy snapshotting
+     * @param user Address of the user
+     * @param period Payout period number
+     * @return User's USDT value at the specified period
+     *
+     * Logic:
+     * - First checks if we have a snapshot for this user/period
+     * - If no snapshot exists, uses current USDT value (lazy approach)
+     * - This saves gas during distribution by not snapshotting all users upfront
+     */
+    function getUserUSDTAtPeriod(
+        address user,
+        uint256 period
+    ) internal view returns (uint256) {
+        // If we have a snapshot, use it
+        uint256 snapshotUSDT = userUSDTSnapshot[user][period];
+        if (snapshotUSDT > 0) {
+            return snapshotUSDT;
+        }
+
+        // Otherwise, use current USDT value (lazy approach)
+        return investors[user].usdtValue;
+    }
+
+    // ============================================
+    // USER INFORMATION FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Get comprehensive payout information for a user
+     * @dev Returns detailed information about user's payout status and claimable amounts
+     * @param _user Address of the user to query
+     * @return totalClaimable Total amount the user can claim now
+     * @return totalClaimed Total amount the user has claimed historically
+     * @return lastClaimedPeriod Last payout period the user claimed
+     * @return userUSDTValue User's total USDT investment value
+     * @return claimablePeriods Array of period numbers with claimable payouts
+     * @return claimableAmounts Array of claimable amounts for each period
+     *
+     * Gas Optimization: This is a view function for UI/frontend usage
+     * It performs the same calculations as claimAvailablePayouts() but doesn't modify state
+     */
+    function getUserPayoutInfo(
         address _user
-    ) external view returns (uint256 totalAvailable, uint256 claimed, uint256 claimable) {
-        Investor storage user = investors[_user];
-        if (user.deposited == 0) return (0, 0, 0);
+    )
+        external
+        view
+        returns (
+            uint256 totalClaimable,
+            uint256 totalClaimed,
+            uint256 lastClaimedPeriod,
+            uint256 userUSDTValue,
+            uint256[] memory claimablePeriods,
+            uint256[] memory claimableAmounts
+        )
+    {
+        Investor storage investor = investors[_user];
+        if (investor.deposited == 0) {
+            return (0, 0, 0, 0, new uint256[](0), new uint256[](0));
+        }
 
-        uint256 userBalance = balanceOf(_user);
-        if (userBalance == 0) return (0, 0, 0);
+        // Return basic information
+        totalClaimed = investor.totalPayoutsClaimed;
+        lastClaimedPeriod = userLastClaimedPeriod[_user];
+        userUSDTValue = investor.usdtValue;
 
-        uint256 totalSupply = totalSupply();
-        if (totalSupply == 0) return (0, 0, 0);
-
-        // Calculate total available from all periods
-        totalAvailable = 0;
-        for (uint256 period = 1; period <= currentPayoutPeriod; period++) {
-            uint256 periodFunds = payoutFundsPerPeriod[period];
-            if (periodFunds > 0) {
-                totalAvailable += (periodFunds * userBalance) / totalSupply;
+        // Count claimable periods first
+        uint256 claimableCount = 0;
+        for (
+            uint256 period = lastClaimedPeriod + 1;
+            period <= currentPayoutPeriod;
+            period++
+        ) {
+            if (payoutFundsPerPeriod[period] > 0) {
+                claimableCount++;
             }
         }
-        
-        // Calculate claimable from unclaimed periods
-        claimable = 0;
-        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
+
+        // Initialize arrays with correct size
+        claimablePeriods = new uint256[](claimableCount);
+        claimableAmounts = new uint256[](claimableCount);
+
+        // Calculate claimable amounts for each period
+        uint256 index = 0;
+        totalClaimable = 0;
+
+        for (
+            uint256 period = lastClaimedPeriod + 1;
+            period <= currentPayoutPeriod;
+            period++
+        ) {
             uint256 periodFunds = payoutFundsPerPeriod[period];
-            if (periodFunds > 0) {
-                claimable += (periodFunds * userBalance) / totalSupply;
+            uint256 totalUSDTAtPeriod = totalUSDTSnapshot[period];
+
+            if (periodFunds > 0 && totalUSDTAtPeriod > 0) {
+                uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(_user, period);
+
+                if (userUSDTAtPeriod > 0) {
+                    uint256 userShare = (periodFunds *
+                        userUSDTAtPeriod *
+                        PRECISION_SCALE) /
+                        totalUSDTAtPeriod /
+                        PRECISION_SCALE;
+
+                    claimablePeriods[index] = period;
+                    claimableAmounts[index] = userShare;
+                    totalClaimable += userShare;
+                    index++;
+                }
             }
         }
-        
-        claimed = user.totalPayoutBalance;
-        
-        // Ensure claimable doesn't exceed contract balance
+
+        // Safety check: ensure claimable doesn't exceed contract balance
         uint256 contractBalance = payoutToken.balanceOf(address(this));
-        if (claimable > contractBalance) {
-            claimable = contractBalance;
+        if (totalClaimable > contractBalance) {
+            totalClaimable = contractBalance;
         }
     }
 
-    // Emergency unlock feature - allows users to unlock tokens before maturity with penalty
+    // ============================================
+    // TOKEN REDEMPTION FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Claim final tokens after maturity (normal redemption)
+     * @dev Allows users to redeem their original tokens after maturity date
+     *
+     * Requirements:
+     * - Current time must be >= maturity date
+     * - Contract must not be paused
+     * - User must not have already claimed final tokens
+     * - User must have a deposit
+     *
+     * Effects:
+     * - Marks user as having claimed final tokens
+     * - Reduces total escrowed amount and total USDT invested
+     * - Burns user's wrapped tokens
+     * - Transfers original deposited tokens back to user
+     *
+     * @custom:security Uses nonReentrant to prevent reentrancy attacks
+     * @custom:security Follows Checks-Effects-Interactions pattern
+     */
+    function claimFinalTokens()
+        external
+        onlyAfterMaturity
+        nonReentrant
+        whenNotPaused
+    {
+        Investor storage investor = investors[msg.sender];
+
+        // Checks: Validate user eligibility
+        if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
+        if (investor.deposited == 0) revert NoDeposit();
+
+        uint256 wrappedBalance = balanceOf(msg.sender);
+        uint256 depositedAmount = investor.deposited;
+        uint256 userUSDTValue = investor.usdtValue;
+
+        // Effects: Update state before external calls
+        investor.hasClaimedFinalTokens = true;
+        totalEscrowed -= depositedAmount;
+        totalUSDTInvested -= userUSDTValue;
+
+        // Effects: Burn wrapped tokens
+        _burn(msg.sender, wrappedBalance);
+
+        // Interactions: Transfer original tokens
+        if (!peggedToken.transfer(msg.sender, depositedAmount)) {
+            revert TransferFailed();
+        }
+
+        emit FinalTokensClaimed(msg.sender, depositedAmount);
+    }
+
+    // ============================================
+    // EMERGENCY FUNCTIONS
+    // ============================================
+
+    /**
+     * @notice Enable emergency unlock feature with penalty
+     * @dev Only callable by admin role, allows users to unlock tokens before maturity
+     * @param _penaltyPercentage Penalty percentage in basis points (e.g., 1000 = 10%)
+     *
+     * Requirements:
+     * - Caller must have DEFAULT_ADMIN_ROLE
+     * - Penalty percentage must not exceed MAX_PENALTY (50%)
+     *
+     * Effects:
+     * - Enables emergency unlock feature
+     * - Sets penalty percentage for early withdrawals
+     *
+     * Use Cases:
+     * - Market emergencies
+     * - Regulatory requirements
+     * - Force majeure events
+     */
     function enableEmergencyUnlock(
         uint256 _penaltyPercentage
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_penaltyPercentage > 5000) revert InvalidPenalty(); // Max 50% penalty
+        if (_penaltyPercentage > MAX_PENALTY) revert InvalidPenalty();
+
         emergencyUnlockEnabled = true;
         emergencyUnlockPenalty = _penaltyPercentage;
+
         emit EmergencyUnlockEnabled(_penaltyPercentage);
     }
 
+    /**
+     * @notice Disable emergency unlock
+     */
     function disableEmergencyUnlock() external onlyRole(DEFAULT_ADMIN_ROLE) {
         emergencyUnlockEnabled = false;
         emergencyUnlockPenalty = 0;
+
+        emit EmergencyUnlockDisabled();
     }
 
-    // User can emergency unlock their tokens before maturity (with penalty)
-    function emergencyUnlock() external nonReentrant {
+    /**
+     * @notice Emergency unlock tokens before maturity (with penalty)
+     */
+    function emergencyUnlock() external nonReentrant whenNotPaused {
         if (!emergencyUnlockEnabled) revert UnlockDisabled();
 
-        Investor storage user = investors[msg.sender];
-        if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert AlreadyUnlocked();
-        if (user.hasClaimedTokens) revert Claimed();
+        Investor storage investor = investors[msg.sender];
+        if (investor.deposited == 0) revert NoDeposit();
+        if (investor.hasClaimedFinalTokens) revert AlreadyClaimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
-        if (wrappedBalance == 0) revert NoDeposit();
+        uint256 depositedAmount = investor.deposited;
+        uint256 userUSDTValue = investor.usdtValue;
 
         // Calculate penalty
-        uint256 penaltyAmount = (user.deposited * emergencyUnlockPenalty) /
-            10000;
-        uint256 amountToReturn = user.deposited - penaltyAmount;
+        uint256 penaltyAmount = (depositedAmount * emergencyUnlockPenalty) /
+            BASIS_POINTS;
+        uint256 amountToReturn = depositedAmount - penaltyAmount;
+
+        // Update state before external calls
+        investor.hasClaimedFinalTokens = true;
+        totalEscrowed -= depositedAmount;
+        totalUSDTInvested -= userUSDTValue;
 
         // Burn wrapped tokens
         _burn(msg.sender, wrappedBalance);
 
-        // Clean up user record completely
-        delete investors[msg.sender];
-
         // Transfer tokens minus penalty
-        if (!peggedToken.transfer(msg.sender, amountToReturn))
+        if (!peggedToken.transfer(msg.sender, amountToReturn)) {
             revert TransferFailed();
+        }
 
         emit EmergencyUnlockUsed(msg.sender, amountToReturn, penaltyAmount);
     }
-    
-    // Get next available payout time
+
+    /**
+     * @notice Get next available payout time
+     */
     function getNextPayoutTime() public view returns (uint256) {
         if (lastPayoutDistributionTime == 0) {
             return firstPayoutDate;
         }
         return lastPayoutDistributionTime + payoutPeriodDuration;
     }
-    
-    // Check if payout period is available
+
+    /**
+     * @notice Check if payout period is available
+     */
     function isPayoutPeriodAvailable() external view returns (bool) {
         return block.timestamp >= getNextPayoutTime();
     }
-    
-    // Get current payout period info
-    function getCurrentPayoutPeriodInfo() external view returns (
-        uint256 period,
-        uint256 lastDistributionTime,
-        uint256 nextPayoutTime,
-        bool canDistribute
-    ) {
+
+    /**
+     * @notice Get current payout period information
+     */
+    function getCurrentPayoutPeriodInfo()
+        external
+        view
+        returns (
+            uint256 period,
+            uint256 lastDistributionTime,
+            uint256 nextPayoutTime,
+            bool canDistribute,
+            uint256 requiredTokens,
+            uint256 currentAPR
+        )
+    {
         period = currentPayoutPeriod;
         lastDistributionTime = lastPayoutDistributionTime;
         nextPayoutTime = getNextPayoutTime();
         canDistribute = block.timestamp >= nextPayoutTime;
-    }
-    
-    // Get user's claimable periods
-    function getUserClaimablePeriods(address _user) external view returns (
-        uint256[] memory periods,
-        uint256[] memory amounts
-    ) {
-        Investor storage user = investors[_user];
-        if (user.deposited == 0) {
-            return (new uint256[](0), new uint256[](0));
-        }
-        
-        uint256 userBalance = balanceOf(_user);
-        uint256 totalSupply = totalSupply();
-        
-        if (userBalance == 0 || totalSupply == 0) {
-            return (new uint256[](0), new uint256[](0));
-        }
-        
-        // Count claimable periods
-        uint256 claimableCount = 0;
-        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
-            if (payoutFundsPerPeriod[period] > 0) {
-                claimableCount++;
-            }
-        }
-        
-        periods = new uint256[](claimableCount);
-        amounts = new uint256[](claimableCount);
-        
-        uint256 index = 0;
-        for (uint256 period = user.lastClaimedPeriod + 1; period <= currentPayoutPeriod; period++) {
-            uint256 periodFunds = payoutFundsPerPeriod[period];
-            if (periodFunds > 0) {
-                periods[index] = period;
-                amounts[index] = (periodFunds * userBalance) / totalSupply;
-                index++;
-            }
-        }
+        (requiredTokens, ) = this.calculateRequiredPayoutTokens();
+        currentAPR = payoutAPR;
     }
 
-    function claimFinalTokens() external onlyAfterMaturity {
-        Investor storage user = investors[msg.sender];
-        if (user.hasClaimedTokens) revert Claimed();
-        if (user.deposited == 0) revert NoDeposit();
-        if (user.emergencyUnlocked) revert Claimed();
-
-        uint256 wrappedBalance = balanceOf(msg.sender);
-        _burn(msg.sender, wrappedBalance);
-
-        uint256 depositedAmount = user.deposited;
-        
-        // Clean up user record completely
-        delete investors[msg.sender];
-        
-        if (!peggedToken.transfer(msg.sender, depositedAmount))
-            revert TransferFailed();
-
-        emit FinalTokensClaimed(msg.sender, depositedAmount);
-    }
-
-    // Emergency pause/unpause
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    /**
+     * @notice Pause contract (emergency)
+     */
+    function pause() external onlyRole(PAUSE_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    /**
+     * @notice Unpause contract
+     */
+    function unpause() external onlyRole(PAUSE_ROLE) {
         _unpause();
     }
 
-    // Grant payout admin role
+    /**
+     * @notice Grant payout admin role
+     */
     function grantPayoutAdminRole(
         address _admin
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) validAddress(_admin) {
         _grantRole(PAYOUT_ADMIN_ROLE, _admin);
     }
 
-    // Revoke payout admin role
+    /**
+     * @notice Revoke payout admin role
+     */
     function revokePayoutAdminRole(
         address _admin
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(PAYOUT_ADMIN_ROLE, _admin);
     }
 
+    /**
+     * @notice Override transfer to prevent transfers
+     */
     function transfer(address, uint256) public pure override returns (bool) {
         revert NoTransfers();
     }
 
+    /**
+     * @notice Override transferFrom to prevent transfers
+     */
     function transferFrom(
         address,
         address,
         uint256
     ) public pure override returns (bool) {
         revert NoTransfers();
+    }
+
+    /**
+     * @notice Get contract information
+     */
+    function getContractInfo()
+        external
+        view
+        returns (
+            address peggedTokenAddress,
+            address payoutTokenAddress,
+            uint256 maturityTimestamp,
+            uint256 totalEscrowedAmount,
+            uint256 totalUSDTInvestedAmount,
+            uint256 currentPeriod,
+            uint256 currentPayoutAPR,
+            bool emergencyUnlockStatus,
+            uint256 emergencyPenalty
+        )
+    {
+        return (
+            address(peggedToken),
+            address(payoutToken),
+            maturityDate,
+            totalEscrowed,
+            totalUSDTInvested,
+            currentPayoutPeriod,
+            payoutAPR,
+            emergencyUnlockEnabled,
+            emergencyUnlockPenalty
+        );
     }
 }

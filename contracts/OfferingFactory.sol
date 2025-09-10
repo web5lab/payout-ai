@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "./Offering.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./interfaces/IWrappedTokenFactory.sol";
 
 // Import the WrapedTokenConfig struct
@@ -24,32 +25,11 @@ struct CreateOfferingConfig {
     address investmentManager;
     address payoutTokenAddress;
     uint256 payoutRate;
-    IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
     uint256 payoutPeriodDuration; // Duration between payouts (e.g., 30 days = 2592000 seconds)
     uint256 firstPayoutDate; // When first payout becomes available
-}
-
-struct CreateOfferingWithTokensConfig {
-    address saleToken;
-    uint256 minInvestment;
-    uint256 maxInvestment;
-    uint256 startDate;
-    uint256 endDate;
-    uint256 maturityDate;
-    bool autoTransfer;
-    bool apyEnabled;
-    uint256 fundraisingCap;
-    uint256 tokenPrice;
-    address tokenOwner;
-    address escrowAddress;
-    address investmentManager;
-    address payoutTokenAddress;
-    uint256 payoutRate;
-    IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
-    uint256 payoutPeriodDuration;
-    uint256 firstPayoutDate;
-    address[] paymentTokens;
-    address[] oracles;
+    // Optional custom names - if empty, will use token name + "Wrapped"
+    string customWrappedName;
+    string customWrappedSymbol;
 }
 
 /**
@@ -113,6 +93,43 @@ contract OfferingFactory is Ownable {
         emit USDTConfigUpdated(_usdtAddress, _usdtOracleAddress);
     }
 
+    /**
+     * @dev Generate wrapped token name and symbol based on the sale token
+     * @param saleToken Address of the sale token
+     * @param customName Custom name (if empty, will generate from token name)
+     * @param customSymbol Custom symbol (if empty, will generate from token symbol)
+     * @return name The generated or custom name
+     * @return symbol The generated or custom symbol
+     */
+    function _generateWrappedTokenNames(
+        address saleToken,
+        string memory customName,
+        string memory customSymbol
+    ) internal view returns (string memory name, string memory symbol) {
+        // If custom names are provided, use them
+        if (bytes(customName).length > 0) {
+            name = customName;
+        } else {
+            // Generate name from sale token
+            try IERC20Metadata(saleToken).name() returns (string memory tokenName) {
+                name = string(abi.encodePacked(tokenName, " Wrapped"));
+            } catch {
+                name = "Wrapped Token"; // Fallback name
+            }
+        }
+
+        if (bytes(customSymbol).length > 0) {
+            symbol = customSymbol;
+        } else {
+            // Generate symbol from sale token
+            try IERC20Metadata(saleToken).symbol() returns (string memory tokenSymbol) {
+                symbol = string(abi.encodePacked("w", tokenSymbol));
+            } catch {
+                symbol = "WRT"; // Fallback symbol
+            }
+        }
+    }
+
     function createOffering(
         CreateOfferingConfig memory config
     ) external onlyOwner returns (address offeringAddress) {
@@ -126,9 +143,16 @@ contract OfferingFactory is Ownable {
 
         Offering offering = new Offering();
         if (config.apyEnabled) {
+            // Generate wrapped token names
+            (string memory wrappedName, string memory wrappedSymbol) = _generateWrappedTokenNames(
+                config.saleToken,
+                config.customWrappedName,
+                config.customWrappedSymbol
+            );
+
             WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
-                name: "Wrapped Token",
-                symbol: "WRT",
+                name: wrappedName,
+                symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
@@ -159,8 +183,7 @@ contract OfferingFactory is Ownable {
             wrappedTokenAddress: wrappedTokenAddress,
             investmentManager: config.investmentManager,
             payoutTokenAddress: config.payoutTokenAddress,
-            payoutRate: config.payoutRate,
-            defaultPayoutFrequency: config.defaultPayoutFrequency
+            payoutRate: config.payoutRate
         });
 
         offering.initialize(initConfig);
@@ -170,13 +193,15 @@ contract OfferingFactory is Ownable {
     }
 
     function createOfferingWithPaymentTokens(
-        CreateOfferingWithTokensConfig memory config
+        CreateOfferingConfig memory config,
+        address[] memory paymentTokens,
+        address[] memory oracles
     ) external onlyOwner returns (address offeringAddress) {
         require(
-            config.paymentTokens.length == config.oracles.length,
+            paymentTokens.length == oracles.length,
             "Array length mismatch"
         );
-        require(config.paymentTokens.length > 0, "No payment tokens provided");
+        require(paymentTokens.length > 0, "No payment tokens provided");
         require(config.escrowAddress != address(0), "Invalid escrow address");
         require(
             config.payoutTokenAddress != address(0),
@@ -187,9 +212,16 @@ contract OfferingFactory is Ownable {
         Offering offering = new Offering();
 
         if (config.apyEnabled) {
+            // Generate wrapped token names
+            (string memory wrappedName, string memory wrappedSymbol) = _generateWrappedTokenNames(
+                config.saleToken,
+                config.customWrappedName,
+                config.customWrappedSymbol
+            );
+
             WrapedTokenConfig memory wrappedConfig = WrapedTokenConfig({
-                name: "Wrapped Token",
-                symbol: "WRT",
+                name: wrappedName,
+                symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
                 maturityDate: config.maturityDate,
@@ -220,14 +252,13 @@ contract OfferingFactory is Ownable {
             wrappedTokenAddress: wrappedTokenAddress,
             investmentManager: config.investmentManager,
             payoutTokenAddress: config.payoutTokenAddress,
-            payoutRate: config.payoutRate,
-            defaultPayoutFrequency: config.defaultPayoutFrequency
+            payoutRate: config.payoutRate
         });
 
         offering.initialize(initConfig);
         offeringAddress = address(offering);
 
-        _configurePaymentTokens(offering, config.paymentTokens, config.oracles);
+        _configurePaymentTokens(offering, paymentTokens, oracles);
         _storeOffering(offeringAddress, config.tokenOwner);
     }
 

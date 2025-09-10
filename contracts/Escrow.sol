@@ -4,20 +4,55 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./interfaces/IInvestmentManager.sol"; // Import the interface
+
+interface IOffering {
+    function finalizeOffering() external;
+}
 
 struct EscrowConfig {
     address owner;
 }
 
 contract Escrow is Ownable, ReentrancyGuard {
-    bool public refundsEnabled;
+    address public investmentManager; // New state variable
+
+    modifier onlyInvestmentManager() {
+        require(msg.sender == investmentManager, "Only InvestmentManager can call this function");
+        _;
+    }
 
     struct DepositInfo {
         uint256 amount;
-        address token; // address(0) means native ETH
+        address token;
     }
 
-    mapping(address => mapping(address => DepositInfo)) public deposits; // offeringContract => investor => DepositInfo
+    struct OfferingInfo {
+        address owner;
+        bool isRegistered;
+        bool isFinalized;
+    }
+
+    struct InvestmentTotals {
+        uint256 totalETH;
+        mapping(address => uint256) tokenTotals; // token address => total amount
+        address[] tokens; // array to track which tokens have been invested
+    }
+
+    // offeringContract => investor => DepositInfo
+    mapping(address => mapping(address => DepositInfo)) public deposits;
+
+    // offeringContract => refunds enabled
+    mapping(address => bool) public refundsEnabled;
+
+    // offeringContract => OfferingInfo
+    mapping(address => OfferingInfo) public offerings;
+
+    // offeringContract => InvestmentTotals
+    mapping(address => InvestmentTotals) private investmentTotals;
+
+    // offeringContract => token address => bool (to check if token exists in array)
+    mapping(address => mapping(address => bool)) private tokenExists;
 
     event Deposited(
         address indexed offeringContract,
@@ -31,11 +66,48 @@ contract Escrow is Ownable, ReentrancyGuard {
         address indexed token,
         uint256 amount
     );
-    event RefundsEnabled();
+    event RefundsEnabled(address indexed offeringContract);
     event Withdrawn(address indexed token, uint256 amount, address indexed to);
+    event OfferingRegistered(
+        address indexed offeringContract,
+        address indexed owner
+    );
+    event OfferingFinalized(
+        address indexed offeringContract,
+        address indexed owner,
+        uint256 totalETH,
+        address[] tokens,
+        uint256[] tokenAmounts
+    );
 
     constructor(EscrowConfig memory config) Ownable(config.owner) {
         require(config.owner != address(0), "Invalid owner");
+    }
+
+    function setInvestmentManager(address _investmentManager) external onlyOwner {
+        require(_investmentManager != address(0), "Invalid investment manager address");
+        investmentManager = _investmentManager;
+    }
+
+    // Register an offering contract with its owner
+    function registerOffering(
+        address _offeringContract,
+        address _offeringOwner
+    ) external onlyOwner {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(_offeringOwner != address(0), "Invalid offering owner");
+        require(
+            !offerings[_offeringContract].isRegistered,
+            "Offering already registered"
+        );
+
+        offerings[_offeringContract] = OfferingInfo({
+            owner: _offeringOwner,
+            isRegistered: true,
+            isFinalized: false
+        });
+
+        emit OfferingRegistered(_offeringContract, _offeringOwner);
     }
 
     // Deposit native ETH
@@ -48,14 +120,40 @@ contract Escrow is Ownable, ReentrancyGuard {
             "Only offering contract can deposit"
         );
         require(msg.value > 0, "Invalid amount");
-        require(!refundsEnabled, "Refunds already enabled");
+        require(!refundsEnabled[_offeringContract], "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Offering already finalized"
+        );
 
-        deposits[_offeringContract][_investor] = DepositInfo({
-            amount: msg.value,
-            token: address(0) // ETH
-        });
+        // Update or add deposit
+        DepositInfo storage existingDeposit = deposits[_offeringContract][
+            _investor
+        ];
+
+        if (existingDeposit.amount > 0 && existingDeposit.token == address(0)) {
+            // Add to existing ETH deposit
+            existingDeposit.amount += msg.value;
+        } else {
+            // Create new deposit (overwrites if different token type)
+            if (existingDeposit.amount > 0) {
+                // Refund existing different token deposit first
+                _processRefund(_offeringContract, _investor, existingDeposit);
+            }
+            deposits[_offeringContract][_investor] = DepositInfo({
+                amount: msg.value,
+                token: address(0) // ETH
+            });
+        }
+
+        // Update investment totals
+        investmentTotals[_offeringContract].totalETH += msg.value;
 
         emit Deposited(_offeringContract, _investor, address(0), msg.value);
     }
@@ -73,9 +171,17 @@ contract Escrow is Ownable, ReentrancyGuard {
         );
         require(tokenAddr != address(0), "Invalid token");
         require(amount > 0, "Invalid amount");
-        require(!refundsEnabled, "Refunds already enabled");
+        require(!refundsEnabled[_offeringContract], "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Offering already finalized"
+        );
 
         require(
             IERC20(tokenAddr).transferFrom(
@@ -86,37 +192,192 @@ contract Escrow is Ownable, ReentrancyGuard {
             "Transfer failed"
         );
 
-        deposits[_offeringContract][_investor] = DepositInfo({
-            amount: amount,
-            token: tokenAddr
-        });
+        // Update or add deposit
+        DepositInfo storage existingDeposit = deposits[_offeringContract][
+            _investor
+        ];
+
+        if (existingDeposit.amount > 0 && existingDeposit.token == tokenAddr) {
+            // Add to existing token deposit of same type
+            existingDeposit.amount += amount;
+        } else {
+            // Create new deposit (overwrites if different token type)
+            if (existingDeposit.amount > 0) {
+                // Refund existing different token deposit first
+                _processRefund(_offeringContract, _investor, existingDeposit);
+            }
+            deposits[_offeringContract][_investor] = DepositInfo({
+                amount: amount,
+                token: tokenAddr
+            });
+        }
+
+        // Update investment totals
+        InvestmentTotals storage totals = investmentTotals[_offeringContract];
+        totals.tokenTotals[tokenAddr] += amount;
+
+        // Add token to array if not already present
+        if (!tokenExists[_offeringContract][tokenAddr]) {
+            totals.tokens.push(tokenAddr);
+            tokenExists[_offeringContract][tokenAddr] = true;
+        }
 
         emit Deposited(_offeringContract, _investor, tokenAddr, amount);
     }
 
-    // Owner can enable refunds
-    function enableRefunds() external onlyOwner {
-        refundsEnabled = true;
-        emit RefundsEnabled();
+    // Internal function to process refunds
+    function _processRefund(
+        address _offeringContract,
+        address _investor,
+        DepositInfo memory depositInfo
+    ) internal {
+        if (depositInfo.token == address(0)) {
+            // Update ETH totals
+            investmentTotals[_offeringContract].totalETH -= depositInfo.amount;
+
+            (bool sent, ) = payable(_investor).call{value: depositInfo.amount}(
+                ""
+            );
+            require(sent, "ETH refund failed");
+        } else {
+            // Update token totals
+            InvestmentTotals storage totals = investmentTotals[
+                _offeringContract
+            ];
+            totals.tokenTotals[depositInfo.token] -= depositInfo.amount;
+
+            require(
+                IERC20(depositInfo.token).transfer(
+                    _investor,
+                    depositInfo.amount
+                ),
+                "Token refund failed"
+            );
+        }
+
+        emit Refunded(
+            _offeringContract,
+            _investor,
+            depositInfo.token,
+            depositInfo.amount
+        );
     }
 
-    // Owner initiates refund to a specific investor for a specific offering contract
+    // Finalize offering and transfer all funds to offering owner
+    function finalizeOffering(
+        address _offeringContract
+    ) external onlyOwner nonReentrant {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Offering already finalized"
+        );
+        require(
+            !refundsEnabled[_offeringContract],
+            "Refunds enabled - cannot finalize"
+        );
+
+        offerings[_offeringContract].isFinalized = true;
+        address offeringOwner = offerings[_offeringContract].owner;
+        InvestmentTotals storage totals = investmentTotals[_offeringContract];
+
+        IOffering(_offeringContract).finalizeOffering();
+
+        // Prepare arrays for event emission
+        address[] memory tokens = new address[](totals.tokens.length);
+        uint256[] memory amounts = new uint256[](totals.tokens.length);
+
+        // Transfer ETH if any
+        if (totals.totalETH > 0) {
+            require(
+                address(this).balance >= totals.totalETH,
+                "Insufficient ETH balance"
+            );
+            (bool sentETH, ) = payable(offeringOwner).call{
+                value: totals.totalETH
+            }("");
+            require(sentETH, "ETH transfer to offering owner failed");
+        }
+
+        // Transfer all tokens
+        for (uint256 i = 0; i < totals.tokens.length; i++) {
+            address token = totals.tokens[i];
+            uint256 amount = totals.tokenTotals[token];
+
+            tokens[i] = token;
+            amounts[i] = amount;
+
+            if (amount > 0) {
+                require(
+                    IERC20(token).balanceOf(address(this)) >= amount,
+                    "Insufficient token balance"
+                );
+                require(
+                    IERC20(token).transfer(offeringOwner, amount),
+                    "Token transfer failed"
+                );
+            }
+        }
+
+        emit OfferingFinalized(
+            _offeringContract,
+            offeringOwner,
+            totals.totalETH,
+            tokens,
+            amounts
+        );
+    }
+
+    // Owner can enable refunds for a specific offering contract
+    function enableRefunds(address _offeringContract) external onlyOwner {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Cannot enable refunds - offering finalized"
+        );
+
+        refundsEnabled[_offeringContract] = true;
+        emit RefundsEnabled(_offeringContract);
+        // Notify InvestmentManager that refunds are enabled for this offering
+        IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+    }
+
+    // Initiates refund to a specific investor for a specific offering contract
     function refund(
         address _offeringContract,
         address _investor
-    ) external onlyOwner nonReentrant {
-        require(refundsEnabled, "Refunds not enabled");
+    ) external onlyInvestmentManager nonReentrant { // Add modifier
+        require(refundsEnabled[_offeringContract], "Refunds not enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
 
         DepositInfo memory userDeposit = deposits[_offeringContract][_investor];
         require(userDeposit.amount > 0, "Nothing to refund");
 
+        // Clear the deposit first
         deposits[_offeringContract][_investor] = DepositInfo({
             amount: 0,
             token: address(0)
         });
 
+        // Update totals
+        if (userDeposit.token == address(0)) {
+            investmentTotals[_offeringContract].totalETH -= userDeposit.amount;
+        } else {
+            investmentTotals[_offeringContract].tokenTotals[
+                userDeposit.token
+            ] -= userDeposit.amount;
+        }
+
+        // Process refund
         if (userDeposit.token == address(0)) {
             (bool sent, ) = payable(_investor).call{value: userDeposit.amount}(
                 ""
@@ -140,7 +401,7 @@ contract Escrow is Ownable, ReentrancyGuard {
         );
     }
 
-    // Owner withdraws ETH or ERC20 tokens from the contract
+    // Owner withdraws ETH or ERC20 tokens from the contract (emergency function)
     function withdraw(
         address tokenAddr,
         uint256 amount,
@@ -168,6 +429,79 @@ contract Escrow is Ownable, ReentrancyGuard {
         emit Withdrawn(tokenAddr, amount, to);
     }
 
-    // Allow contract to receive ETH for testing
+    // Get offering info
+    function getOfferingInfo(
+        address _offeringContract
+    ) external view returns (OfferingInfo memory) {
+        return offerings[_offeringContract];
+    }
+
+    // Check if offering is registered
+    function isOfferingRegistered(
+        address _offeringContract
+    ) external view returns (bool) {
+        return offerings[_offeringContract].isRegistered;
+    }
+
+    // Check if offering is finalized
+    function isOfferingFinalized(
+        address _offeringContract
+    ) external view returns (bool) {
+        return offerings[_offeringContract].isFinalized;
+    }
+
+    // Get total ETH invested in an offering
+    function getTotalETH(
+        address _offeringContract
+    ) external view returns (uint256) {
+        return investmentTotals[_offeringContract].totalETH;
+    }
+
+    // Get total amount of specific token invested in an offering
+    function getTotalTokenAmount(
+        address _offeringContract,
+        address token
+    ) external view returns (uint256) {
+        return investmentTotals[_offeringContract].tokenTotals[token];
+    }
+
+    // Get all tokens invested in an offering
+    function getInvestedTokens(
+        address _offeringContract
+    ) external view returns (address[] memory) {
+        return investmentTotals[_offeringContract].tokens;
+    }
+
+    // Get complete investment summary for an offering
+    function getInvestmentSummary(
+        address _offeringContract
+    )
+        external
+        view
+        returns (
+            uint256 totalETH,
+            address[] memory tokens,
+            uint256[] memory tokenAmounts
+        )
+    {
+        InvestmentTotals storage totals = investmentTotals[_offeringContract];
+        totalETH = totals.totalETH;
+        tokens = totals.tokens;
+
+        tokenAmounts = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenAmounts[i] = totals.tokenTotals[tokens[i]];
+        }
+    }
+
+    // Get deposit info for a specific investor and offering
+    function getDepositInfo(
+        address _offeringContract,
+        address _investor
+    ) external view returns (DepositInfo memory) {
+        return deposits[_offeringContract][_investor];
+    }
+
+    // Allow contract to receive ETH
     receive() external payable {}
 }

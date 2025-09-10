@@ -17,7 +17,7 @@ interface IWRAPEDTOKEN {
     function registerInvestment(
         address user,
         uint256 amount,
-        PayoutFrequency _payoutFrequency
+        uint256 usdValue
     ) external;
 
     function claimPayout() external;
@@ -34,7 +34,7 @@ interface IEscrow {
         address tokenAddr,
         uint256 amount
     ) external;
-    function refund(address _offeringContract, address _investor) external; // Also update refund to match Escrow.sol
+    function refund(address _offeringContract, address _investor) external;
 }
 
 struct InitConfig {
@@ -43,7 +43,6 @@ struct InitConfig {
     uint256 maxInvestment;
     uint256 startDate;
     uint256 endDate;
-    uint256 maturityDate;
     bool autoTransfer;
     uint256 fundraisingCap;
     uint256 tokenPrice;
@@ -54,7 +53,6 @@ struct InitConfig {
     address investmentManager;
     address payoutTokenAddress;
     uint256 payoutRate;
-    IWRAPEDTOKEN.PayoutFrequency defaultPayoutFrequency;
 }
 
 contract Offering is AccessControl, Pausable, ReentrancyGuard {
@@ -66,19 +64,19 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     uint256 public maxInvestment;
     uint256 public startDate;
     uint256 public endDate;
-    uint256 public maturityDate;
     bool public autoTransfer;
 
     uint256 public fundraisingCap;
     uint256 public totalRaised;
     uint256 public totalPendingTokens;
     bool public isSaleClosed;
+    bool public isOfferingFinalized;
     bool public apyEnabled;
     address public wrappedTokenAddress;
     address public investmentManager;
-    address public payoutTokenAddress; // New state variable
-    uint256 public payoutRate; // New state variable
-    IWRAPEDTOKEN.PayoutFrequency public defaultPayoutFrequency; // New state variable
+    address public payoutTokenAddress;
+    uint256 public payoutRate;
+    IWRAPEDTOKEN.PayoutFrequency public defaultPayoutFrequency;
     bool private initialized;
 
     address public treasury;
@@ -99,6 +97,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     );
     event Claimed(address indexed investor, uint256 amount);
     event SaleClosed(uint256 totalRaised);
+    event OfferingFinalized(uint256 timestamp); // New event
     event TokenPriceUpdated(uint256 newPrice);
     event PaymentTokenWhitelisted(address indexed token, bool status);
     event OracleSet(address indexed token, address oracle);
@@ -145,7 +144,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         maxInvestment = config.maxInvestment;
         startDate = config.startDate;
         endDate = config.endDate;
-        maturityDate = config.maturityDate;
         autoTransfer = config.autoTransfer;
         fundraisingCap = config.fundraisingCap;
         tokenPrice = config.tokenPrice;
@@ -155,9 +153,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         investmentManager = config.investmentManager;
         payoutTokenAddress = config.payoutTokenAddress;
         payoutRate = config.payoutRate;
-        defaultPayoutFrequency = config.defaultPayoutFrequency;
-        payoutPeriodDuration = config.payoutPeriodDuration;
-        firstPayoutDate = config.firstPayoutDate;
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(TOKEN_OWNER_ROLE, config.tokenOwner);
@@ -174,6 +169,22 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
         emit Unpaused(msg.sender);
+    }
+
+    /**
+     * @dev Finalize the offering. Can only be called after end date by admin or token owner.
+     *      Once finalized, users can claim their tokens.
+     */
+    function finalizeOffering() external {
+        require(msg.sender == escrowAddress, "Not authorized to finalize");
+        require(block.timestamp >= endDate, "Sale not ended yet");
+        require(!isOfferingFinalized, "Already finalized");
+
+        isOfferingFinalized = true;
+        isSaleClosed = true; // Ensure sale is closed when finalized
+
+        emit OfferingFinalized(block.timestamp);
+        emit SaleClosed(totalRaised);
     }
 
     /**
@@ -260,7 +271,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
                 IWRAPEDTOKEN(wrappedTokenAddress).registerInvestment(
                     investor,
                     tokensToReceive,
-                    defaultPayoutFrequency
+                    usdValue
                 );
             } else {
                 // Direct transfer of sale token
@@ -354,7 +365,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Claim tokens after maturity.
+     * @dev Claim tokens after offering is finalized.
      */
     function claimTokens(
         address _investor
@@ -365,7 +376,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         onlyInvestMentmanager
         returns (uint256)
     {
-        require(block.timestamp >= maturityDate, "Maturity not reached");
+        require(isOfferingFinalized, "Offering not finalized yet");
 
         uint256 amount = pendingTokens[_investor];
         require(amount > 0, "No tokens to claim");
@@ -376,13 +387,15 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         pendingTokens[_investor] = 0;
         totalPendingTokens -= amount;
+
         if (apyEnabled) {
             saleToken.approve(wrappedTokenAddress, amount);
+            uint256 usdValue = (amount * tokenPrice) / 1e18;
             IWRAPEDTOKEN(wrappedTokenAddress).registerInvestment(
                 _investor,
                 amount,
-                defaultPayoutFrequency
-            ); // Added semicolon here
+                usdValue
+            );
         } else {
             require(
                 saleToken.transfer(_investor, amount),
@@ -394,12 +407,12 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Reclaim unclaimed tokens after maturity. Only owner.
+     * @dev Reclaim unclaimed tokens after offering is finalized. Only owner.
      */
     function reclaimUnclaimedTokens(
         address to
     ) external onlyRole(TOKEN_OWNER_ROLE) nonReentrant {
-        require(block.timestamp > maturityDate, "Not matured");
+        require(isOfferingFinalized, "Offering not finalized");
         require(to != address(0), "Invalid address");
 
         uint256 available = saleToken.balanceOf(address(this)) -
@@ -486,7 +499,39 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_endDate > block.timestamp, "Invalid end date");
         require(_endDate > endDate, "New end date must be after current");
-        require(_endDate < maturityDate, "End date must be before maturity");
         endDate = _endDate;
+    }
+
+    /**
+     * @dev Check if offering can be finalized (end date reached and not already finalized).
+     */
+    function canFinalize() external view returns (bool) {
+        return block.timestamp >= endDate && !isOfferingFinalized;
+    }
+
+    /**
+     * @dev Get offering status information.
+     */
+    function getOfferingStatus()
+        external
+        view
+        returns (
+            bool saleActive,
+            bool saleClosed,
+            bool finalized,
+            uint256 raised,
+            uint256 cap,
+            uint256 endTime
+        )
+    {
+        saleActive =
+            block.timestamp >= startDate &&
+            block.timestamp < endDate &&
+            !isSaleClosed;
+        saleClosed = isSaleClosed;
+        finalized = isOfferingFinalized;
+        raised = totalRaised;
+        cap = fundraisingCap;
+        endTime = endDate;
     }
 }
