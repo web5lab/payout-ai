@@ -860,10 +860,6 @@ contract WRAPPEDTOKEN is
         uint256 depositedAmount = investor.deposited;
         uint256 userUSDTValue = investor.usdtValue;
 
-        // Calculate penalty with overflow protection
-        uint256 penaltyAmount = Math.mulDiv(
-            depositedAmount,
-            emergencyUnlockPenalty,
         uint256 penaltyAmount = Math.mulDiv(
             depositedAmount,
             emergencyUnlockPenalty,
