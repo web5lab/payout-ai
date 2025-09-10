@@ -40,7 +40,7 @@ contract InvestmentManager is Ownable, IInvestmentManager {
         uint256 amount
     );
 
-    event refundEnabled(address indexed offeringAddress); // This event seems to be for the old flow, might be removed later.
+    event refundEnabled(address indexed offeringAddress); 
 
     event KYBValidatorUpdated(address indexed oldValidator, address indexed newValidator);
     event WalletKYBValidated(address indexed wallet, address indexed validator);
