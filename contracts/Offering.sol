@@ -360,7 +360,12 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         emit Invested(investor, paymentToken, paymentAmount, tokensToReceive);
 
         // Check if soft cap is reached
-        if (totalRaised >= softCap && totalRaised - usdValue < softCap) {
+        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
+            emit SoftCapReached(totalRaised, softCap);
+        }
+
+        // Check if soft cap is reached
+        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
             emit SoftCapReached(totalRaised, softCap);
         }
 
@@ -492,7 +497,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     function reclaimUnclaimedTokens(
         address to
     ) external onlyRole(TOKEN_OWNER_ROLE) nonReentrant {
-        require(isOfferingFinalized, "Offering not finalized");
         require(isOfferingFinalized, "Offering not finalized");
         require(to != address(0), "Invalid address");
 
