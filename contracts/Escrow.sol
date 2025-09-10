@@ -266,7 +266,7 @@ contract Escrow is Ownable, ReentrancyGuard {
     // Finalize offering and transfer all funds to offering owner
     function finalizeOffering(
         address _offeringContract
-    ) external nonReentrant {
+    ) external onlyOwner nonReentrant {
         require(_offeringContract != address(0), "Invalid offering contract");
         require(
             offerings[_offeringContract].isRegistered,
@@ -279,12 +279,6 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(
             !refundsEnabled[_offeringContract],
             "Refunds enabled - cannot finalize"
-        );
-        
-        // Allow either escrow owner OR offering owner to finalize
-        require(
-            msg.sender == owner() || msg.sender == offerings[_offeringContract].owner,
-            "Only escrow owner or offering owner can finalize"
         );
 
         offerings[_offeringContract].isFinalized = true;
@@ -336,6 +330,51 @@ contract Escrow is Ownable, ReentrancyGuard {
             tokens,
             amounts
         );
+    }
+
+    // Owner can enable refunds for a specific offering contract
+    function enableRefunds(address _offeringContract) external onlyOwner {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Cannot enable refunds - offering finalized"
+        );
+
+        refundsEnabled[_offeringContract] = true;
+        emit RefundsEnabled(_offeringContract);
+        // Notify InvestmentManager that refunds are enabled for this offering
+        if (investmentManager != address(0)) {
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+        }
+    }
+
+    // Allow offering contract to enable refunds (for cancellation)
+    function enableRefunds(address _offeringContract) external {
+        require(_offeringContract != address(0), "Invalid offering contract");
+        require(
+            msg.sender == owner() || msg.sender == _offeringContract,
+            "Only owner or offering contract can enable refunds"
+        );
+        require(
+            offerings[_offeringContract].isRegistered,
+            "Offering not registered"
+        );
+        require(
+            !offerings[_offeringContract].isFinalized,
+            "Cannot enable refunds - offering finalized"
+        );
+
+        refundsEnabled[_offeringContract] = true;
+        emit RefundsEnabled(_offeringContract);
+        
+        // Notify InvestmentManager that refunds are enabled for this offering
+        if (investmentManager != address(0)) {
+            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
+        }
     }
 
     // Initiates refund to a specific investor for a specific offering contract
@@ -415,48 +454,6 @@ contract Escrow is Ownable, ReentrancyGuard {
         }
 
         emit Withdrawn(tokenAddr, amount, to);
-    }
-
-    // Escrow owner can enable refunds for a specific offering contract
-    function enableRefundsByOwner(address _offeringContract) external onlyOwner {
-        require(_offeringContract != address(0), "Invalid offering contract");
-        require(
-            offerings[_offeringContract].isRegistered,
-            "Offering not registered"
-        );
-        require(
-            !offerings[_offeringContract].isFinalized,
-            "Cannot enable refunds - offering finalized"
-        );
-
-        refundsEnabled[_offeringContract] = true;
-        emit RefundsEnabled(_offeringContract);
-        // Notify InvestmentManager that refunds are enabled for this offering
-        if (investmentManager != address(0)) {
-            IInvestmentManager(investmentManager).notifyRefundsEnabled(_offeringContract);
-        }
-    }
-
-    // Allow offering contract to enable refunds (for cancellation)
-    function enableRefundsByOffering() external {
-        address _offeringContract = msg.sender; // The calling contract is the offering
-        require(_offeringContract != address(0), "Invalid offering contract");
-        require(
-            offerings[_offeringContract].isRegistered,
-            "Offering not registered"
-        );
-        require(
-            !offerings[_offeringContract].isFinalized,
-            "Cannot enable refunds - offering finalized"
-        );
-
-        refundsEnabled[_offeringContract] = true;
-        emit RefundsEnabled(_offeringContract);
-        
-        // Notify InvestmentManager that refunds are enabled for this offering
-        if (investmentManager != address(0)) {
-            IInvestmentManager(investmentManager).notifyRefundsEnabled(msg.sender);
-        }
     }
 
     // Get offering info
