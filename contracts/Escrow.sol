@@ -15,6 +15,8 @@ struct EscrowConfig {
 }
 
 contract Escrow is Ownable, ReentrancyGuard {
+    using SafeExternalCalls for address;
+    
     address public investmentManager; // New state variable
 
     modifier onlyInvestmentManager() {

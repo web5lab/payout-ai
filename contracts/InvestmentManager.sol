@@ -8,8 +8,10 @@ import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./Offering.sol";
 import "./interfaces/IInvestmentManager.sol"; // Import the interface
 import "./Escrow.sol"; // Import Escrow to interact with it
+import "./libraries/SafeExternalCalls.sol";
 
 contract InvestmentManager is Ownable, IInvestmentManager {
+    using SafeExternalCalls for address;
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 

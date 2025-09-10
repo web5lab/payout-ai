@@ -38,6 +38,7 @@ contract WRAPPEDTOKEN is
     ReentrancyGuard,
     Pausable
 {
+    using SafeExternalCalls for address;
     using Math for uint256;
     using SafeCast for uint256;
 

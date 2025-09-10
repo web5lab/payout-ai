@@ -57,6 +57,8 @@ struct InitConfig {
 }
 
 contract Offering is AccessControl, Pausable, ReentrancyGuard {
+    using SafeExternalCalls for address;
+    
     IERC20 public saleToken;
 
     bytes32 public constant TOKEN_OWNER_ROLE = keccak256("TOKEN_OWNER_ROLE");
@@ -199,13 +201,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         // Set first payout date in WrappedToken
         if (apyEnabled && wrappedTokenAddress != address(0)) {
-            try IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate() {
-                // First payout date set successfully
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Failed to set first payout date: ", reason)));
-            } catch (bytes memory) {
-                revert("Failed to set first payout date: Unknown error");
-            }
+            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
         }
 
         emit OfferingFinalized(block.timestamp);
@@ -616,13 +612,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         // Set first payout date in WrappedToken
         if (apyEnabled && wrappedTokenAddress != address(0)) {
-            try IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate() {
-                // First payout date set successfully
-            } catch Error(string memory reason) {
-                revert(string(abi.encodePacked("Failed to set first payout date: ", reason)));
-            } catch (bytes memory) {
-                revert("Failed to set first payout date: Unknown error");
-            }
+            IWRAPEDTOKEN(wrappedTokenAddress).setFirstPayoutDate();
         }
 
         emit OfferingFinalized(block.timestamp);
