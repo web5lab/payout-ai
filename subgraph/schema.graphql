@@ -97,7 +97,7 @@ type UserPayout @entity {
   amount: BigInt!
   payoutToken: Bytes!
   payoutTokenSymbol: String!
-  payoutPeriod: BigInt!
+  payoutPeriodNumber: BigInt!
   userWrappedBalance: BigInt!
   totalWrappedSupply: BigInt!
   sharePercentage: BigInt! # basis points (10000 = 100%)
@@ -214,11 +214,6 @@ type Offering @entity {
   createdBlock: BigInt!
   finalizedAt: BigInt
   cancelledAt: BigInt
-  
-  # Derived relationships
-  investments: [UserInvestment!]! @derivedFrom(field: "offering")
-  claims: [UserClaim!]! @derivedFrom(field: "offering")
-  refunds: [UserRefund!]! @derivedFrom(field: "offering")
 }
 
 type OfferingPerformance @entity {
@@ -285,12 +280,6 @@ type WrappedToken @entity {
   activeHolders: BigInt!
   createdAt: BigInt!
   createdBlock: BigInt!
-  
-  # Derived relationships
-  holders: [UserWrappedTokenHolding!]! @derivedFrom(field: "wrappedToken")
-  payouts: [UserPayout!]! @derivedFrom(field: "wrappedToken")
-  emergencyUnlocks: [UserEmergencyUnlock!]! @derivedFrom(field: "wrappedToken")
-  payoutDistributions: [PayoutDistribution!]! @derivedFrom(field: "wrappedToken")
 }
 
 type WrappedTokenDeployment @entity {
@@ -451,3 +440,4 @@ type UserActivityHistory @entity {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
