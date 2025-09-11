@@ -7,9 +7,9 @@ dataSources:
     name: InvestmentManager
     network: lumia-beam
     source:
-      address: "0xf25157b5657C654E6eD45A848435dB29Db8Bf7D0" # Update with actual deployed address
+      address: "0xA52C99eC55ca7FB2F0f62A384a557424a4abf2E3" # Update with actual deployed address
       abi: InvestmentManager
-      startBlock: 3285394
+      startBlock: 3679934
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -42,9 +42,9 @@ dataSources:
     name: OfferingFactory
     network: lumia-beam
     source:
-      address: "0x6866b02f7a78270C6BF8525AA42f7ABEd54449FF" # Update with actual deployed address
+      address: "0x3F86961fE4f282572D03b8CF4681839F27651FEE" # Update with actual deployed address
       abi: OfferingFactory
-      startBlock: 3285394
+      startBlock: 3679934
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -70,9 +70,9 @@ dataSources:
     name: WrappedTokenFactory
     network: lumia-beam
     source:
-      address: "0x5b857c5cAc158D135f8C94de6B546aaF91552995" # Update with actual deployed address
+      address: "0x25ecCA36349dFD6192CfAa371cF869beE41D887F" # Update with actual deployed address
       abi: WrappedTokenFactory
-      startBlock: 3285394
+      startBlock: 3679934
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

@@ -3,28 +3,159 @@ schema:
   file: schema.graphql
 dataSources:
   - kind: ethereum
-    name: Contract
+    name: InvestmentManager
     network: lumia-beam
     source:
-      address: "0x8deB8C63928183f32a0795848B73896eDe517561"
-      abi: Contract
-      startBlock: 3285394
+      address: "0xA52C99eC55ca7FB2F0f62A384a557424a4abf2E3"
+      abi: InvestmentManager
+      startBlock: 3679934
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - InvestmentRouted
-        - OwnershipTransferred
-        - TokensClaimed
+        - User
+        - UserInvestment
+        - UserClaim
+        - UserRefund
+        - UserKYBValidation
+        - InvestmentEvent
+        - RefundEvent
+        - GlobalStats
       abis:
-        - name: Contract
-          file: Contract/abis/Contract.json
+        - name: InvestmentManager
+          file: InvestmentManager/abis/InvestmentManager.json
       eventHandlers:
         - event: InvestmentRouted(indexed address,indexed address,indexed address,uint256,uint256)
           handler: handleInvestmentRouted
-        - event: OwnershipTransferred(indexed address,indexed address)
-          handler: handleOwnershipTransferred
         - event: TokensClaimed(indexed address,indexed address,uint256)
           handler: handleTokensClaimed
-      file: Contract/Contract.wasm
+        - event: RefundClaimed(indexed address,indexed address,indexed address,uint256)
+          handler: handleRefundClaimed
+        - event: KYBValidatedInvestment(indexed address,indexed address,indexed
+            address,uint256,uint256,bytes32)
+          handler: handleKYBValidatedInvestment
+      file: InvestmentManager/InvestmentManager.wasm
+  - kind: ethereum
+    name: OfferingFactory
+    network: lumia-beam
+    source:
+      address: "0x3F86961fE4f282572D03b8CF4681839F27651FEE"
+      abi: OfferingFactory
+      startBlock: 3679934
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - User
+        - Offering
+        - OfferingDeployment
+        - OfferingPerformance
+        - GlobalStats
+      abis:
+        - name: OfferingFactory
+          file: OfferingFactory/abis/OfferingFactory.json
+        - name: Offering
+          file: OfferingFactory/abis/Offering.json
+      eventHandlers:
+        - event: OfferingDeployed(indexed uint256,indexed address,indexed address,address)
+          handler: handleOfferingDeployed
+      file: OfferingFactory/OfferingFactory.wasm
+  - kind: ethereum
+    name: WrappedTokenFactory
+    network: lumia-beam
+    source:
+      address: "0x25ecCA36349dFD6192CfAa371cF869beE41D887F"
+      abi: WrappedTokenFactory
+      startBlock: 3679934
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - User
+        - WrappedToken
+        - WrappedTokenDeployment
+        - GlobalStats
+      abis:
+        - name: WrappedTokenFactory
+          file: WrappedTokenFactory/abis/WrappedTokenFactory.json
+        - name: WRAPEDTOKEN
+          file: WrappedTokenFactory/abis/WRAPEDTOKEN.json
+      eventHandlers:
+        - event: WrappedTokenDeployed(indexed uint256,indexed address,indexed address,address)
+          handler: handleWrappedTokenDeployed
+      file: WrappedTokenFactory/WrappedTokenFactory.wasm
+templates:
+  - kind: ethereum/contract
+    name: Offering
+    network: lumia-beam
+    source:
+      abi: Offering
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Offering
+        - OfferingPerformance
+        - UserInvestment
+        - RefundEvent
+      abis:
+        - name: Offering
+          file: Offering/abis/Offering.json
+      eventHandlers:
+        - event: Invested(indexed address,address,uint256,uint256)
+          handler: handleInvested
+        - event: Claimed(indexed address,uint256)
+          handler: handleClaimed
+        - event: SaleClosed(uint256)
+          handler: handleSaleClosed
+        - event: OfferingFinalized(uint256)
+          handler: handleOfferingFinalized
+        - event: OfferingCancelled(uint256)
+          handler: handleOfferingCancelled
+        - event: SoftCapReached(uint256,uint256)
+          handler: handleSoftCapReached
+      file: templates/Offering/Offering.wasm
+  - kind: ethereum/contract
+    name: WRAPEDTOKEN
+    network: lumia-beam
+    source:
+      abi: WRAPEDTOKEN
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - User
+        - WrappedToken
+        - UserWrappedTokenHolding
+        - UserPayout
+        - UserEmergencyUnlock
+        - UserClaim
+        - PayoutDistribution
+        - PayoutPeriod
+        - UserUpcomingPayout
+        - PayoutEvent
+        - EmergencyEvent
+      abis:
+        - name: WRAPEDTOKEN
+          file: WRAPEDTOKEN/abis/WRAPEDTOKEN.json
+      eventHandlers:
+        - event: InvestmentRegistered(indexed address,uint256,uint256)
+          handler: handleInvestmentRegistered
+        - event: PayoutDistributed(indexed uint256,uint256,uint256)
+          handler: handlePayoutDistributed
+        - event: PayoutClaimed(indexed address,uint256,uint256)
+          handler: handlePayoutClaimed
+        - event: FinalTokensClaimed(indexed address,uint256)
+          handler: handleFinalTokensClaimed
+        - event: EmergencyUnlockEnabled(uint256)
+          handler: handleEmergencyUnlockEnabled
+        - event: EmergencyUnlockUsed(indexed address,uint256,uint256)
+          handler: handleEmergencyUnlockUsed
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: templates/WRAPEDTOKEN/WRAPEDTOKEN.wasm
