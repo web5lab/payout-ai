@@ -2,12 +2,12 @@ specVersion: 0.0.5
 schema:
   file: ./schema.graphql
 dataSources:
-  # Investment Manager
+  # Investment Manager - Main entry point for user investments
   - kind: ethereum
     name: InvestmentManager
     network: lumia-beam
     source:
-      address: "0x8deB8C63928183f32a0795848B73896eDe517561"
+      address: "0xf25157b5657C654E6eD45A848435dB29Db8Bf7D0" # Update with actual deployed address
       abi: InvestmentManager
       startBlock: 3285394
     mapping:
@@ -15,9 +15,13 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - InvestmentRouted
-        - TotalInvestment
-        - TokensClaimed
+        - User
+        - UserInvestment
+        - UserClaim
+        - UserRefund
+        - UserKYBValidation
+        - InvestmentEvent
+        - RefundEvent
         - GlobalStats
       abis:
         - name: InvestmentManager
@@ -27,14 +31,18 @@ dataSources:
           handler: handleInvestmentRouted
         - event: TokensClaimed(indexed address,indexed address,uint256)
           handler: handleTokensClaimed
+        - event: RefundClaimed(indexed address,indexed address,indexed address,uint256)
+          handler: handleRefundClaimed
+        - event: KYBValidatedInvestment(indexed address,indexed address,indexed address,uint256,uint256,bytes32)
+          handler: handleKYBValidatedInvestment
       file: ./src/investment-manager.ts
 
-  # Offering Factory
+  # Offering Factory - Tracks offering creation
   - kind: ethereum
     name: OfferingFactory
     network: lumia-beam
     source:
-      address: "0x1234567890123456789012345678901234567890" # Replace with actual address
+      address: "0x6866b02f7a78270C6BF8525AA42f7ABEd54449FF" # Update with actual deployed address
       abi: OfferingFactory
       startBlock: 3285394
     mapping:
@@ -42,8 +50,10 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - OfferingDeployed
+        - User
         - Offering
+        - OfferingDeployment
+        - OfferingPerformance
         - GlobalStats
       abis:
         - name: OfferingFactory
@@ -55,12 +65,12 @@ dataSources:
           handler: handleOfferingDeployed
       file: ./src/offering-factory.ts
 
-  # Wrapped Token Factory
+  # Wrapped Token Factory - Tracks wrapped token creation
   - kind: ethereum
     name: WrappedTokenFactory
     network: lumia-beam
     source:
-      address: "0x2345678901234567890123456789012345678901" # Replace with actual address
+      address: "0x5b857c5cAc158D135f8C94de6B546aaF91552995" # Update with actual deployed address
       abi: WrappedTokenFactory
       startBlock: 3285394
     mapping:
@@ -68,8 +78,9 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - WrappedTokenDeployed
+        - User
         - WrappedToken
+        - WrappedTokenDeployment
         - GlobalStats
       abis:
         - name: WrappedTokenFactory
@@ -94,8 +105,9 @@ templates:
       language: wasm/assemblyscript
       entities:
         - Offering
-        - InvestmentRouted
-        - TotalInvestment
+        - OfferingPerformance
+        - UserInvestment
+        - RefundEvent
       abis:
         - name: Offering
           file: ./abis/Offering.json
@@ -106,6 +118,12 @@ templates:
           handler: handleClaimed
         - event: SaleClosed(uint256)
           handler: handleSaleClosed
+        - event: OfferingFinalized(uint256)
+          handler: handleOfferingFinalized
+        - event: OfferingCancelled(uint256)
+          handler: handleOfferingCancelled
+        - event: SoftCapReached(uint256,uint256)
+          handler: handleSoftCapReached
       file: ./src/offering.ts
 
   # Dynamic Wrapped Token Template
@@ -119,28 +137,27 @@ templates:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - User
         - WrappedToken
-        - WrappedTokenInvestor
-        - PayoutRound
-        - PayoutClaim
-        - UserPayoutSummary
-        - EmergencyUnlock
-        - FinalTokenClaim
-        - GlobalStats
+        - UserWrappedTokenHolding
+        - UserPayout
+        - UserEmergencyUnlock
+        - UserClaim
+        - PayoutDistribution
+        - PayoutPeriod
+        - UserUpcomingPayout
+        - PayoutEvent
+        - EmergencyEvent
       abis:
         - name: WRAPEDTOKEN
           file: ./abis/WRAPEDTOKEN.json
       eventHandlers:
-        - event: PayoutFundsAdded(uint256,uint256)
-          handler: handlePayoutFundsAdded
-        - event: PayoutPeriodStarted(indexed uint256,uint256)
-          handler: handlePayoutPeriodStarted
+        - event: InvestmentRegistered(indexed address,uint256,uint256)
+          handler: handleInvestmentRegistered
         - event: PayoutDistributed(indexed uint256,uint256,uint256)
           handler: handlePayoutDistributed
         - event: PayoutClaimed(indexed address,uint256,uint256)
           handler: handlePayoutClaimed
-        - event: IndividualPayoutClaimed(indexed address,uint256)
-          handler: handleIndividualPayoutClaimed
         - event: FinalTokensClaimed(indexed address,uint256)
           handler: handleFinalTokensClaimed
         - event: EmergencyUnlockEnabled(uint256)
@@ -149,12 +166,4 @@ templates:
           handler: handleEmergencyUnlockUsed
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
-        - event: RoleGranted(indexed bytes32,indexed address,indexed address)
-          handler: handleRoleGranted
-        - event: RoleRevoked(indexed bytes32,indexed address,indexed address)
-          handler: handleRoleRevoked
-        - event: Paused(address)
-          handler: handlePaused
-        - event: Unpaused(address)
-          handler: handleUnpaused
       file: ./src/wrapped-token.ts

@@ -1,208 +1,424 @@
 import {
-  PayoutFundsAdded as PayoutFundsAddedEvent,
+  PayoutDistributed as PayoutDistributedEvent,
   PayoutClaimed as PayoutClaimedEvent,
-  IndividualPayoutClaimed as IndividualPayoutClaimedEvent,
   FinalTokensClaimed as FinalTokensClaimedEvent,
   EmergencyUnlockEnabled as EmergencyUnlockEnabledEvent,
   EmergencyUnlockUsed as EmergencyUnlockUsedEvent,
-  Transfer as TransferEvent,
-  RoleGranted as RoleGrantedEvent,
-  RoleRevoked as RoleRevokedEvent,
-  Paused as PausedEvent,
-  Unpaused as UnpausedEvent
+  InvestmentRegistered as InvestmentRegisteredEvent,
+  Transfer as TransferEvent
 } from "../generated/templates/WRAPEDTOKEN/WRAPEDTOKEN"
 import { 
+  User,
   WrappedToken,
-  WrappedTokenInvestor,
-  PayoutRound,
-  PayoutClaim,
-  UserPayoutSummary,
-  EmergencyUnlock,
-  FinalTokenClaim,
-  GlobalStats,
-  TotalInvestment,
-  WrappedTokenTransfer,
-  RoleChange,
-  PauseEvent,
-  WrappedTokenInvestmentRegistration
+  UserWrappedTokenHolding,
+  UserPayout,
+  UserEmergencyUnlock,
+  UserClaim,
+  PayoutDistribution,
+  PayoutPeriod,
+  UserUpcomingPayout,
+  PayoutEvent,
+  EmergencyEvent
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
+import { 
+  getOrCreateUser, 
+  updateUserActivity, 
+  updateGlobalStats,
+  calculateSharePercentage,
+  createUserNotification,
+  checkAndCreatePayoutNotifications,
+  checkAndCreateMaturityNotifications
+} from "./user-manager"
 
-export function handlePayoutFundsAdded(event: PayoutFundsAddedEvent): void {
+export function handleInvestmentRegistered(event: InvestmentRegisteredEvent): void {
+  let user = getOrCreateUser(event.params.user, event.block.timestamp)
+  let wrappedToken = WrappedToken.load(event.address)
+  
+  if (!wrappedToken) {
+    // Create wrapped token entity if it doesn't exist
+    wrappedToken = createWrappedTokenEntity(event.address, event.block.timestamp)
+  }
+  
+  // Create or update user wrapped token holding
+  let holdingId = event.params.user.toHexString() + "-" + event.address.toHexString()
+  let holding = UserWrappedTokenHolding.load(Bytes.fromUTF8(holdingId))
+  
+  if (!holding) {
+    holding = new UserWrappedTokenHolding(Bytes.fromUTF8(holdingId))
+    holding.user = event.params.user
+    holding.userAddress = event.params.user
+    holding.wrappedToken = event.address
+    holding.wrappedTokenAddress = event.address
+    holding.currentBalance = BigInt.fromI32(0)
+    holding.originalInvestment = BigInt.fromI32(0)
+    holding.usdValueInvested = BigInt.fromI32(0)
+    holding.totalPayoutsReceived = BigInt.fromI32(0)
+    holding.totalPayoutsClaimed = BigInt.fromI32(0)
+    holding.currentClaimablePayouts = BigInt.fromI32(0)
+    holding.lastClaimedPeriod = BigInt.fromI32(0)
+    holding.isActive = true
+    holding.hasClaimedFinal = false
+    holding.hasEmergencyUnlocked = false
+    holding.firstInvestmentAt = event.block.timestamp
+    
+    // Update wrapped token holder count
+    wrappedToken.totalHolders = wrappedToken.totalHolders.plus(BigInt.fromI32(1))
+    wrappedToken.activeHolders = wrappedToken.activeHolders.plus(BigInt.fromI32(1))
+  }
+  
+  // Update holding with new investment
+  holding.currentBalance = holding.currentBalance.plus(event.params.tokenAmount)
+  holding.originalInvestment = holding.originalInvestment.plus(event.params.tokenAmount)
+  holding.usdValueInvested = holding.usdValueInvested.plus(event.params.usdValue)
+  holding.lastActivityAt = event.block.timestamp
+  holding.save()
+  
+  // Update wrapped token stats
+  wrappedToken.totalSupply = wrappedToken.totalSupply.plus(event.params.tokenAmount)
+  wrappedToken.totalUSDTInvested = wrappedToken.totalUSDTInvested.plus(event.params.usdValue)
+  wrappedToken.save()
+  
+  // Update user activity
+  updateUserActivity(
+    event.params.user,
+    "wrapped_investment",
+    event.params.tokenAmount,
+    event.address,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    "Registered investment in wrapped token",
+    null,
+    event.address
+  )
+  
+  // Check maturity notifications
+  checkAndCreateMaturityNotifications(
+    event.params.user,
+    event.address,
+    wrappedToken.maturityDate,
+    event.block.timestamp
+  )
+  
+  // Create investment success notification
+  createUserNotification(
+    event.params.user,
+    "wrapped_investment",
+    "Wrapped Token Investment Registered",
+    "Your investment has been registered in the wrapped token system. You'll receive periodic payouts!",
+    "medium",
+    event.block.timestamp,
+    null,
+    event.address,
+    event.params.tokenAmount
+  )
+}
+
+export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   let wrappedToken = WrappedToken.load(event.address)
   if (!wrappedToken) return
 
-  // Update wrapped token total funds
-  wrappedToken.totalPayoutFunds = event.params.totalFunds
+  // Create payout distribution record
+  let distributionId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let distribution = new PayoutDistribution(distributionId)
+  
+  distribution.wrappedToken = event.address
+  distribution.wrappedTokenAddress = event.address
+  distribution.period = event.params.period
+  distribution.amount = event.params.amount
+  distribution.totalUSDTAtDistribution = event.params.totalUSDTAtDistribution
+  distribution.distributedBy = event.transaction.from
+  distribution.blockNumber = event.block.number
+  distribution.blockTimestamp = event.block.timestamp
+  distribution.transactionHash = event.transaction.hash
+  
+  // Calculate eligible holders and balance
+  distribution.eligibleHolders = wrappedToken.activeHolders
+  distribution.totalEligibleBalance = wrappedToken.totalSupply
+  
+  distribution.save()
+
+  // Create payout period record
+  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
+  let payoutPeriod = new PayoutPeriod(Bytes.fromUTF8(periodId))
+  
+  payoutPeriod.wrappedToken = event.address
+  payoutPeriod.wrappedTokenAddress = event.address
+  payoutPeriod.periodNumber = event.params.period
+  payoutPeriod.distributedAmount = event.params.amount
+  payoutPeriod.totalUSDTAtDistribution = event.params.totalUSDTAtDistribution
+  payoutPeriod.distributedAt = event.block.timestamp
+  payoutPeriod.distributedBy = event.transaction.from
+  payoutPeriod.totalClaims = BigInt.fromI32(0)
+  payoutPeriod.totalClaimedAmount = BigInt.fromI32(0)
+  payoutPeriod.unclaimedAmount = event.params.amount
+  payoutPeriod.claimRate = BigInt.fromI32(0)
+  payoutPeriod.eligibleUsers = wrappedToken.activeHolders
+  payoutPeriod.blockNumber = event.block.number
+  payoutPeriod.transactionHash = event.transaction.hash
+  
+  payoutPeriod.save()
+
+  // Update wrapped token stats
+  wrappedToken.currentPayoutPeriod = event.params.period
+  wrappedToken.lastPayoutDistributionTime = event.block.timestamp
+  wrappedToken.totalPayoutFundsDistributed = wrappedToken.totalPayoutFundsDistributed.plus(event.params.amount)
+  wrappedToken.currentPayoutFunds = wrappedToken.currentPayoutFunds.plus(event.params.amount)
   wrappedToken.save()
 
-  // Create payout round record
-  let roundNumber = getRoundNumber(event.address, event.block.timestamp)
-  let roundId = event.address.toHexString() + "-" + roundNumber.toString()
-  let payoutRound = new PayoutRound(Bytes.fromUTF8(roundId))
-  
-  payoutRound.wrappedToken = event.address
-  payoutRound.roundNumber = roundNumber
-  payoutRound.amount = event.params.amount
-  payoutRound.totalFundsAfterRound = event.params.totalFunds
-  payoutRound.addedBy = event.transaction.from
-  payoutRound.addedAt = event.block.timestamp
-  payoutRound.addedBlock = event.block.number
-  payoutRound.transactionHash = event.transaction.hash
-  payoutRound.save()
+  // Create payout event
+  let payoutEvent = new PayoutEvent(distributionId)
+  payoutEvent.eventType = "distributed"
+  payoutEvent.wrappedToken = event.address
+  payoutEvent.amount = event.params.amount
+  payoutEvent.period = event.params.period
+  payoutEvent.totalUSDTAtDistribution = event.params.totalUSDTAtDistribution
+  payoutEvent.eligibleHolders = wrappedToken.activeHolders
+  payoutEvent.blockNumber = event.block.number
+  payoutEvent.blockTimestamp = event.block.timestamp
+  payoutEvent.transactionHash = event.transaction.hash
+  payoutEvent.save()
 
+  // Create upcoming payout records for all holders
+  createUpcomingPayoutsForHolders(event.address, event.params.period, event.params.amount, event.block.timestamp)
+  
+  // Notify all holders about available payout
+  notifyHoldersAboutPayout(event.address, event.params.amount, event.block.timestamp)
+  
   // Update global statistics
-  let stats = GlobalStats.load(Bytes.fromUTF8("global"))
-  if (stats) {
-    stats.totalPayoutFunds = stats.totalPayoutFunds.plus(event.params.amount)
-    stats.lastUpdated = event.block.timestamp
-    stats.save()
-  }
+  updateGlobalStats("payout_distribution", event.params.amount, event.block.timestamp)
 }
 
 export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
+  let user = getOrCreateUser(event.params.user, event.block.timestamp)
   let wrappedToken = WrappedToken.load(event.address)
   if (!wrappedToken) return
 
-  // Create payout claim record
-  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let payoutClaim = new PayoutClaim(Bytes.fromUTF8(claimId))
+  // Create user payout record
+  let payoutId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let userPayout = new UserPayout(payoutId)
   
-  payoutClaim.wrappedToken = event.address
-  payoutClaim.user = event.params.user
-  payoutClaim.amount = event.params.amount
-  payoutClaim.remainingBalance = event.params.remainingBalance
-  payoutClaim.claimedAt = event.block.timestamp
-  payoutClaim.claimedBlock = event.block.number
-  payoutClaim.transactionHash = event.transaction.hash
+  userPayout.user = event.params.user
+  userPayout.userAddress = event.params.user
+  userPayout.wrappedToken = event.address
+  userPayout.wrappedTokenAddress = event.address
+  userPayout.amount = event.params.amount
+  userPayout.payoutToken = wrappedToken.payoutToken
+  userPayout.payoutTokenSymbol = wrappedToken.payoutTokenSymbol || ""
+  userPayout.payoutPeriod = event.params.period
+  userPayout.isPartialClaim = false // Assuming full claim for now
+  userPayout.remainingClaimable = BigInt.fromI32(0)
+  userPayout.blockNumber = event.block.number
+  userPayout.blockTimestamp = event.block.timestamp
+  userPayout.transactionHash = event.transaction.hash
   
-  // Set reference to user summary for derived field
-  let summaryId = event.address.toHexString() + "-" + event.params.user.toHexString()
-  payoutClaim.userSummary = Bytes.fromUTF8(summaryId)
+  // Get user's wrapped token balance for share calculation
+  let holdingId = event.params.user.toHexString() + "-" + event.address.toHexString()
+  let holding = UserWrappedTokenHolding.load(Bytes.fromUTF8(holdingId))
   
-  payoutClaim.save()
+  if (holding) {
+    userPayout.userWrappedBalance = holding.currentBalance
+    userPayout.sharePercentage = calculateSharePercentage(holding.currentBalance, wrappedToken.totalSupply)
+    
+    // Update holding stats
+    holding.totalPayoutsClaimed = holding.totalPayoutsClaimed.plus(event.params.amount)
+    holding.lastClaimedPeriod = event.params.period
+    holding.lastActivityAt = event.block.timestamp
+    holding.save()
+  } else {
+    userPayout.userWrappedBalance = BigInt.fromI32(0)
+    userPayout.sharePercentage = BigInt.fromI32(0)
+  }
+  
+  userPayout.totalWrappedSupply = wrappedToken.totalSupply
+  userPayout.save()
 
-  // Update or create user payout summary
-  let summary = UserPayoutSummary.load(Bytes.fromUTF8(summaryId))
-  if (!summary) {
-    summary = new UserPayoutSummary(Bytes.fromUTF8(summaryId))
-    summary.wrappedToken = event.address
-    summary.userAddress = event.params.user
-    summary.totalClaimedAmount = BigInt.fromI32(0)
-    summary.totalAvailableAmount = BigInt.fromI32(0)
-    summary.currentClaimableAmount = BigInt.fromI32(0)
-    summary.lastClaimTimestamp = BigInt.fromI32(0)
-    summary.claimCount = BigInt.fromI32(0)
+  // Update payout period stats
+  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
+  let payoutPeriod = PayoutPeriod.load(Bytes.fromUTF8(periodId))
+  if (payoutPeriod) {
+    payoutPeriod.totalClaims = payoutPeriod.totalClaims.plus(BigInt.fromI32(1))
+    payoutPeriod.totalClaimedAmount = payoutPeriod.totalClaimedAmount.plus(event.params.amount)
+    payoutPeriod.unclaimedAmount = payoutPeriod.unclaimedAmount.minus(event.params.amount)
+    
+    if (payoutPeriod.distributedAmount.gt(BigInt.fromI32(0))) {
+      payoutPeriod.claimRate = payoutPeriod.totalClaimedAmount
+        .times(BigInt.fromI32(10000))
+        .div(payoutPeriod.distributedAmount)
+    }
+    
+    payoutPeriod.save()
   }
 
-  summary.totalClaimedAmount = summary.totalClaimedAmount.plus(event.params.amount)
-  summary.currentClaimableAmount = event.params.remainingBalance
-  summary.lastClaimTimestamp = event.block.timestamp
-  summary.claimCount = summary.claimCount.plus(BigInt.fromI32(1))
-  summary.save()
+  // Update wrapped token stats
+  wrappedToken.totalPayoutsClaimed = wrappedToken.totalPayoutsClaimed.plus(event.params.amount)
+  wrappedToken.currentPayoutFunds = wrappedToken.currentPayoutFunds.minus(event.params.amount)
+  wrappedToken.save()
 
-  // Update wrapped token investor record
-  let investorId = event.address.toHexString() + "-" + event.params.user.toHexString()
-  let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
-  if (investor) {
-    investor.totalPayoutsClaimed = investor.totalPayoutsClaimed.plus(event.params.amount)
-    investor.totalPayoutBalance = investor.totalPayoutBalance.plus(event.params.amount)
-    investor.save()
-  }
+  // Create payout event
+  let payoutEventId = event.transaction.hash.concatI32(event.logIndex.toI32() + 1000)
+  let payoutEvent = new PayoutEvent(payoutEventId)
+  payoutEvent.eventType = "claimed"
+  payoutEvent.wrappedToken = event.address
+  payoutEvent.user = event.params.user
+  payoutEvent.amount = event.params.amount
+  payoutEvent.period = event.params.period
+  payoutEvent.userBalance = userPayout.userWrappedBalance
+  payoutEvent.sharePercentage = userPayout.sharePercentage
+  payoutEvent.blockNumber = event.block.number
+  payoutEvent.blockTimestamp = event.block.timestamp
+  payoutEvent.transactionHash = event.transaction.hash
+  payoutEvent.save()
+
+  // Update user activity
+  updateUserActivity(
+    event.params.user,
+    "payout",
+    event.params.amount,
+    wrappedToken.payoutToken,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    "Claimed payout from wrapped token",
+    null,
+    event.address
+  )
 
   // Update global statistics
-  let stats = GlobalStats.load(Bytes.fromUTF8("global"))
-  if (stats) {
-    stats.totalPayoutsClaimed = stats.totalPayoutsClaimed.plus(event.params.amount)
-    stats.lastUpdated = event.block.timestamp
-    stats.save()
-  }
-}
-
-export function handleIndividualPayoutClaimed(event: IndividualPayoutClaimedEvent): void {
-  // Create individual payout claim record
-  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString() + "-individual"
-  let payoutClaim = new PayoutClaim(Bytes.fromUTF8(claimId))
+  updateGlobalStats("payout", event.params.amount, event.block.timestamp)
   
-  payoutClaim.wrappedToken = event.address
-  payoutClaim.user = event.params.user
-  payoutClaim.amount = event.params.amount
-  payoutClaim.remainingBalance = BigInt.fromI32(0) // Individual claims don't have remaining balance info
-  payoutClaim.claimedAt = event.block.timestamp
-  payoutClaim.claimedBlock = event.block.number
-  payoutClaim.transactionHash = event.transaction.hash
-  
-  // Set reference to user summary
-  let summaryId = event.address.toHexString() + "-" + event.params.user.toHexString()
-  payoutClaim.userSummary = Bytes.fromUTF8(summaryId)
-  
-  payoutClaim.save()
-
-  // Update user summary (similar to handlePayoutClaimed)
-  let summary = UserPayoutSummary.load(Bytes.fromUTF8(summaryId))
-  if (!summary) {
-    summary = new UserPayoutSummary(Bytes.fromUTF8(summaryId))
-    summary.wrappedToken = event.address
-    summary.userAddress = event.params.user
-    summary.totalClaimedAmount = BigInt.fromI32(0)
-    summary.totalAvailableAmount = BigInt.fromI32(0)
-    summary.currentClaimableAmount = BigInt.fromI32(0)
-    summary.lastClaimTimestamp = BigInt.fromI32(0)
-    summary.claimCount = BigInt.fromI32(0)
-  }
-
-  summary.totalClaimedAmount = summary.totalClaimedAmount.plus(event.params.amount)
-  summary.lastClaimTimestamp = event.block.timestamp
-  summary.claimCount = summary.claimCount.plus(BigInt.fromI32(1))
-  summary.save()
+  // Create payout success notification
+  createUserNotification(
+    event.params.user,
+    "payout_claimed",
+    "Payout Claimed Successfully!",
+    "You have successfully claimed " + event.params.amount.toString() + " payout tokens.",
+    "medium",
+    event.block.timestamp,
+    null,
+    event.address,
+    event.params.amount
+  )
 }
 
 export function handleFinalTokensClaimed(event: FinalTokensClaimedEvent): void {
-  let claimId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let finalClaim = new FinalTokenClaim(Bytes.fromUTF8(claimId))
+  let user = getOrCreateUser(event.params.user, event.block.timestamp)
+  let wrappedToken = WrappedToken.load(event.address)
+  if (!wrappedToken) return
+
+  // Create user claim record
+  let claimId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let userClaim = new UserClaim(claimId)
   
-  finalClaim.wrappedToken = event.address
-  finalClaim.user = event.params.user
-  finalClaim.amount = event.params.amount
-  finalClaim.claimedAt = event.block.timestamp
-  finalClaim.claimedBlock = event.block.number
-  finalClaim.transactionHash = event.transaction.hash
-  finalClaim.save()
+  userClaim.user = event.params.user
+  userClaim.userAddress = event.params.user
+  userClaim.offeringAddress = wrappedToken.offeringAddress
+  userClaim.claimType = "final_tokens"
+  userClaim.amount = event.params.amount
+  userClaim.tokenAddress = wrappedToken.peggedToken
+  userClaim.tokenSymbol = getTokenSymbol(wrappedToken.peggedToken)
+  userClaim.isEmergencyUnlock = false
+  userClaim.penaltyAmount = BigInt.fromI32(0)
+  userClaim.blockNumber = event.block.number
+  userClaim.blockTimestamp = event.block.timestamp
+  userClaim.transactionHash = event.transaction.hash
+  
+  userClaim.save()
 
-  // Update wrapped token investor record - mark as claimed
-  let investorId = event.address.toHexString() + "-" + event.params.user.toHexString()
-  let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
-  if (investor) {
-    investor.hasClaimedTokens = true
-    investor.save()
+  // Update user wrapped token holding
+  let holdingId = event.params.user.toHexString() + "-" + event.address.toHexString()
+  let holding = UserWrappedTokenHolding.load(Bytes.fromUTF8(holdingId))
+  
+  if (holding) {
+    holding.isActive = false
+    holding.hasClaimedFinal = true
+    holding.currentBalance = BigInt.fromI32(0)
+    holding.lastActivityAt = event.block.timestamp
+    holding.save()
+    
+    // Update user's active wrapped tokens count
+    user.activeWrappedTokens = user.activeWrappedTokens.minus(BigInt.fromI32(1))
+    user.save()
   }
 
-  // Update global statistics
-  let stats = GlobalStats.load(Bytes.fromUTF8("global"))
-  if (stats) {
-    stats.totalFinalClaims = stats.totalFinalClaims.plus(BigInt.fromI32(1))
-    stats.lastUpdated = event.block.timestamp
-    stats.save()
-  }
+  // Update wrapped token stats
+  wrappedToken.activeHolders = wrappedToken.activeHolders.minus(BigInt.fromI32(1))
+  wrappedToken.totalSupply = wrappedToken.totalSupply.minus(event.params.amount)
+  wrappedToken.save()
+
+  // Update user activity
+  updateUserActivity(
+    event.params.user,
+    "final_claim",
+    event.params.amount,
+    wrappedToken.peggedToken,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    "Claimed final tokens at maturity",
+    null,
+    event.address
+  )
+  
+  // Create final claim notification
+  createUserNotification(
+    event.params.user,
+    "final_tokens_claimed",
+    "Final Tokens Claimed!",
+    "You have successfully claimed your final tokens at maturity. Investment cycle complete!",
+    "high",
+    event.block.timestamp,
+    null,
+    event.address,
+    event.params.amount
+  )
 }
 
 export function handleEmergencyUnlockEnabled(event: EmergencyUnlockEnabledEvent): void {
   let wrappedToken = WrappedToken.load(event.address)
-  if (wrappedToken) {
-    wrappedToken.emergencyUnlockEnabled = true
-    wrappedToken.emergencyUnlockPenalty = event.params.penalty
-    wrappedToken.save()
-  }
+  if (!wrappedToken) return
+
+  wrappedToken.emergencyUnlockEnabled = true
+  wrappedToken.emergencyUnlockPenalty = event.params.penalty
+  wrappedToken.save()
+
+  // Create emergency event
+  let emergencyId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let emergencyEvent = new EmergencyEvent(emergencyId)
+  emergencyEvent.eventType = "enabled"
+  emergencyEvent.wrappedToken = event.address
+  emergencyEvent.penaltyPercentage = event.params.penalty
+  emergencyEvent.amount = BigInt.fromI32(0)
+  emergencyEvent.penalty = BigInt.fromI32(0)
+  emergencyEvent.blockNumber = event.block.number
+  emergencyEvent.blockTimestamp = event.block.timestamp
+  emergencyEvent.transactionHash = event.transaction.hash
+  emergencyEvent.save()
+
+  // Notify all holders about emergency unlock availability
+  notifyHoldersAboutEmergencyUnlock(event.address, event.params.penalty, event.block.timestamp)
 }
 
 export function handleEmergencyUnlockUsed(event: EmergencyUnlockUsedEvent): void {
-  let unlockId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let emergencyUnlock = new EmergencyUnlock(Bytes.fromUTF8(unlockId))
+  let user = getOrCreateUser(event.params.user, event.block.timestamp)
+  let wrappedToken = WrappedToken.load(event.address)
+  if (!wrappedToken) return
+
+  // Create user emergency unlock record
+  let unlockId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let emergencyUnlock = new UserEmergencyUnlock(unlockId)
   
-  emergencyUnlock.wrappedToken = event.address
   emergencyUnlock.user = event.params.user
-  emergencyUnlock.amount = event.params.amount
-  emergencyUnlock.penalty = event.params.penalty
+  emergencyUnlock.userAddress = event.params.user
+  emergencyUnlock.wrappedToken = event.address
+  emergencyUnlock.wrappedTokenAddress = event.address
+  emergencyUnlock.originalAmount = event.params.amount.plus(event.params.penalty)
+  emergencyUnlock.penaltyAmount = event.params.penalty
+  emergencyUnlock.receivedAmount = event.params.amount
+  emergencyUnlock.blockNumber = event.block.number
+  emergencyUnlock.blockTimestamp = event.block.timestamp
+  emergencyUnlock.transactionHash = event.transaction.hash
   
   // Calculate penalty percentage
   let totalAmount = event.params.amount.plus(event.params.penalty)
@@ -210,189 +426,199 @@ export function handleEmergencyUnlockUsed(event: EmergencyUnlockUsedEvent): void
     ? event.params.penalty.times(BigInt.fromI32(10000)).div(totalAmount)
     : BigInt.fromI32(0)
   
-  emergencyUnlock.unlockedAt = event.block.timestamp
-  emergencyUnlock.unlockedBlock = event.block.number
-  emergencyUnlock.transactionHash = event.transaction.hash
+  // Get prior payout activity
+  let holdingId = event.params.user.toHexString() + "-" + event.address.toHexString()
+  let holding = UserWrappedTokenHolding.load(Bytes.fromUTF8(holdingId))
+  if (holding) {
+    emergencyUnlock.totalPayoutsClaimedBefore = holding.totalPayoutsClaimed
+    
+    // Update holding status
+    holding.isActive = false
+    holding.hasEmergencyUnlocked = true
+    holding.currentBalance = BigInt.fromI32(0)
+    holding.lastActivityAt = event.block.timestamp
+    holding.save()
+    
+    // Update user's active wrapped tokens count
+    user.activeWrappedTokens = user.activeWrappedTokens.minus(BigInt.fromI32(1))
+    user.save()
+  } else {
+    emergencyUnlock.totalPayoutsClaimedBefore = BigInt.fromI32(0)
+  }
+  
   emergencyUnlock.save()
 
-  // Update wrapped token investor record - mark as emergency unlocked
-  let investorId = event.address.toHexString() + "-" + event.params.user.toHexString()
-  let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
-  if (investor) {
-    investor.emergencyUnlocked = true
-    investor.wrappedBalance = BigInt.fromI32(0) // Tokens burned
-    investor.save()
-  }
+  // Create user claim record for emergency unlock
+  let claimId = event.transaction.hash.concatI32(event.logIndex.toI32() + 2000)
+  let userClaim = new UserClaim(claimId)
+  
+  userClaim.user = event.params.user
+  userClaim.userAddress = event.params.user
+  userClaim.offeringAddress = wrappedToken.offeringAddress
+  userClaim.claimType = "emergency_unlock"
+  userClaim.amount = event.params.amount
+  userClaim.tokenAddress = wrappedToken.peggedToken
+  userClaim.tokenSymbol = getTokenSymbol(wrappedToken.peggedToken)
+  userClaim.isEmergencyUnlock = true
+  userClaim.penaltyAmount = event.params.penalty
+  userClaim.blockNumber = event.block.number
+  userClaim.blockTimestamp = event.block.timestamp
+  userClaim.transactionHash = event.transaction.hash
+  
+  userClaim.save()
 
-  // Update wrapped token total supply
-  let wrappedToken = WrappedToken.load(event.address)
-  if (wrappedToken) {
-    // Total supply will be updated by Transfer event (burn)
-    wrappedToken.save()
-  }
+  // Update wrapped token stats
+  wrappedToken.totalEmergencyUnlocks = wrappedToken.totalEmergencyUnlocks.plus(BigInt.fromI32(1))
+  wrappedToken.activeHolders = wrappedToken.activeHolders.minus(BigInt.fromI32(1))
+  wrappedToken.totalSupply = wrappedToken.totalSupply.minus(emergencyUnlock.originalAmount)
+  wrappedToken.save()
 
-  // Update total investment record
-  let totalInvestmentId = wrappedToken ? wrappedToken.offeringContract.toHexString() + "-" + event.params.user.toHexString() : ""
-  if (totalInvestmentId) {
-    let totalInvestment = TotalInvestment.load(Bytes.fromUTF8(totalInvestmentId))
-    if (totalInvestment) {
-      totalInvestment.wrappedTokenBalance = BigInt.fromI32(0)
-      totalInvestment.save()
-    }
-  }
+  // Create emergency event
+  let emergencyEventId = event.transaction.hash.concatI32(event.logIndex.toI32() + 3000)
+  let emergencyEvent = new EmergencyEvent(emergencyEventId)
+  emergencyEvent.eventType = "used"
+  emergencyEvent.wrappedToken = event.address
+  emergencyEvent.user = event.params.user
+  emergencyEvent.amount = event.params.amount
+  emergencyEvent.penalty = event.params.penalty
+  emergencyEvent.penaltyPercentage = emergencyUnlock.penaltyPercentage
+  emergencyEvent.blockNumber = event.block.number
+  emergencyEvent.blockTimestamp = event.block.timestamp
+  emergencyEvent.transactionHash = event.transaction.hash
+  emergencyEvent.save()
+
+  // Update user activity
+  updateUserActivity(
+    event.params.user,
+    "emergency",
+    event.params.penalty, // Track penalty as the "amount" for emergency activity
+    wrappedToken.peggedToken,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    "Emergency unlock with penalty",
+    null,
+    event.address
+  )
 
   // Update global statistics
-  let stats = GlobalStats.load(Bytes.fromUTF8("global"))
-  if (stats) {
-    stats.totalEmergencyUnlocks = stats.totalEmergencyUnlocks.plus(BigInt.fromI32(1))
-    stats.lastUpdated = event.block.timestamp
-    stats.save()
-  }
+  updateGlobalStats("emergency", event.params.penalty, event.block.timestamp)
+  
+  // Create emergency unlock notification
+  createUserNotification(
+    event.params.user,
+    "emergency_unlock_completed",
+    "Emergency Unlock Completed",
+    "Emergency unlock processed. Received: " + event.params.amount.toString() + ", Penalty: " + event.params.penalty.toString(),
+    "high",
+    event.block.timestamp,
+    null,
+    event.address,
+    event.params.amount
+  )
 }
 
 export function handleTransfer(event: TransferEvent): void {
   let wrappedToken = WrappedToken.load(event.address)
   if (!wrappedToken) return
 
-  // Create transfer record
-  let transferId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let transfer = new WrappedTokenTransfer(Bytes.fromUTF8(transferId))
-  
-  transfer.wrappedToken = event.address
-  transfer.from = event.params.from
-  transfer.to = event.params.to
-  transfer.value = event.params.value
-  transfer.blockNumber = event.block.number
-  transfer.blockTimestamp = event.block.timestamp
-  transfer.transactionHash = event.transaction.hash
-
-  // Determine transfer type
+  // Handle minting (from zero address)
   if (event.params.from.equals(Address.zero())) {
-    transfer.transferType = "mint"
+    // This is handled in handleInvestmentRegistered
+    return
+  }
+  
+  // Handle burning (to zero address)
+  if (event.params.to.equals(Address.zero())) {
+    // Update user holding
+    let holdingId = event.params.from.toHexString() + "-" + event.address.toHexString()
+    let holding = UserWrappedTokenHolding.load(Bytes.fromUTF8(holdingId))
     
-    // Handle minting - create or update investor record
-    let investorId = event.address.toHexString() + "-" + event.params.to.toHexString()
-    let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
-    
-    if (!investor) {
-      investor = new WrappedTokenInvestor(Bytes.fromUTF8(investorId))
-      investor.wrappedToken = event.address
-      investor.userAddress = event.params.to
-      investor.deposited = event.params.value
-      investor.wrappedBalance = BigInt.fromI32(0)
-      investor.totalPayoutsClaimed = BigInt.fromI32(0)
-      investor.totalPayoutBalance = BigInt.fromI32(0)
-      investor.payoutFrequency = 0 // Default to daily
-      investor.lastPayoutTime = event.block.timestamp
-      investor.hasClaimedTokens = false
-      investor.emergencyUnlocked = false
-      investor.registeredAt = event.block.timestamp
-      investor.registeredBlock = event.block.number
+    if (holding) {
+      holding.currentBalance = holding.currentBalance.minus(event.params.value)
+      holding.lastActivityAt = event.block.timestamp
+      holding.save()
     }
     
-    investor.wrappedBalance = investor.wrappedBalance.plus(event.params.value)
-    investor.save()
-
-    // Update wrapped token total supply
-    wrappedToken.totalSupply = wrappedToken.totalSupply.plus(event.params.value)
-    wrappedToken.save()
-
-    // Create investment registration record
-    let registrationId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString() + "-registration"
-    let registration = new WrappedTokenInvestmentRegistration(Bytes.fromUTF8(registrationId))
-    
-    registration.wrappedToken = event.address
-    registration.user = event.params.to
-    registration.amount = event.params.value
-    registration.payoutFrequency = 0 // Default, would need to be updated from registerInvestment call
-    registration.registeredAt = event.block.timestamp
-    registration.registeredBlock = event.block.number
-    registration.transactionHash = event.transaction.hash
-    registration.save()
-
-  } else if (event.params.to.equals(Address.zero())) {
-    transfer.transferType = "burn"
-    
-    // Handle burning - update investor record
-    let investorId = event.address.toHexString() + "-" + event.params.from.toHexString()
-    let investor = WrappedTokenInvestor.load(Bytes.fromUTF8(investorId))
-    
-    if (investor) {
-      investor.wrappedBalance = investor.wrappedBalance.minus(event.params.value)
-      investor.lastClaimedPeriod = BigInt.fromI32(0) // Initialize to 0
-      investor.save()
-    }
-
     // Update wrapped token total supply
     wrappedToken.totalSupply = wrappedToken.totalSupply.minus(event.params.value)
     wrappedToken.save()
-
-  } else {
-    transfer.transferType = "transfer"
-    // Note: Regular transfers are blocked in the contract, but we track them anyway
+    
+    return
   }
-
-  transfer.save()
-}
-
-export function handleRoleGranted(event: RoleGrantedEvent): void {
-  let roleId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let roleChange = new RoleChange(Bytes.fromUTF8(roleId))
   
-  roleChange.wrappedToken = event.address
-  roleChange.role = event.params.role
-  roleChange.account = event.params.account
-  roleChange.sender = event.params.sender
-  roleChange.action = "granted"
-  roleChange.blockNumber = event.block.number
-  roleChange.blockTimestamp = event.block.timestamp
-  roleChange.transactionHash = event.transaction.hash
-  roleChange.save()
+  // Regular transfers are blocked in the contract, but we track them anyway
+  // This would handle any potential transfers if they were allowed
 }
 
-export function handleRoleRevoked(event: RoleRevokedEvent): void {
-  let roleId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let roleChange = new RoleChange(Bytes.fromUTF8(roleId))
+function createWrappedTokenEntity(address: Address, timestamp: BigInt): WrappedToken {
+  let wrappedToken = new WrappedToken(address)
   
-  roleChange.wrappedToken = event.address
-  roleChange.role = event.params.role
-  roleChange.account = event.params.account
-  roleChange.sender = event.params.sender
-  roleChange.action = "revoked"
-  roleChange.blockNumber = event.block.number
-  roleChange.blockTimestamp = event.block.timestamp
-  roleChange.transactionHash = event.transaction.hash
-  roleChange.save()
-}
-
-export function handlePaused(event: PausedEvent): void {
-  let pauseId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let pauseEvent = new PauseEvent(Bytes.fromUTF8(pauseId))
+  // Initialize with default values
+  wrappedToken.name = ""
+  wrappedToken.symbol = ""
+  wrappedToken.offeringAddress = Bytes.empty()
+  wrappedToken.peggedToken = Bytes.empty()
+  wrappedToken.payoutToken = Bytes.empty()
+  wrappedToken.payoutTokenSymbol = ""
+  wrappedToken.maturityDate = BigInt.fromI32(0)
+  wrappedToken.payoutAPR = BigInt.fromI32(0)
+  wrappedToken.payoutPeriodDuration = BigInt.fromI32(0)
+  wrappedToken.firstPayoutDate = BigInt.fromI32(0)
+  wrappedToken.currentPayoutPeriod = BigInt.fromI32(0)
+  wrappedToken.lastPayoutDistributionTime = BigInt.fromI32(0)
+  wrappedToken.totalSupply = BigInt.fromI32(0)
+  wrappedToken.totalEscrowed = BigInt.fromI32(0)
+  wrappedToken.totalUSDTInvested = BigInt.fromI32(0)
+  wrappedToken.totalPayoutFundsDistributed = BigInt.fromI32(0)
+  wrappedToken.totalPayoutsClaimed = BigInt.fromI32(0)
+  wrappedToken.currentPayoutFunds = BigInt.fromI32(0)
+  wrappedToken.emergencyUnlockEnabled = false
+  wrappedToken.emergencyUnlockPenalty = BigInt.fromI32(0)
+  wrappedToken.totalEmergencyUnlocks = BigInt.fromI32(0)
+  wrappedToken.totalHolders = BigInt.fromI32(0)
+  wrappedToken.activeHolders = BigInt.fromI32(0)
+  wrappedToken.createdAt = timestamp
+  wrappedToken.createdBlock = BigInt.fromI32(0)
   
-  pauseEvent.wrappedToken = event.address
-  pauseEvent.action = "paused"
-  pauseEvent.account = event.params.account
-  pauseEvent.blockNumber = event.block.number
-  pauseEvent.blockTimestamp = event.block.timestamp
-  pauseEvent.transactionHash = event.transaction.hash
-  pauseEvent.save()
+  wrappedToken.save()
+  return wrappedToken
 }
 
-export function handleUnpaused(event: UnpausedEvent): void {
-  let pauseId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
-  let pauseEvent = new PauseEvent(Bytes.fromUTF8(pauseId))
+function createUpcomingPayoutsForHolders(
+  wrappedTokenAddress: Address, 
+  period: BigInt, 
+  amount: BigInt, 
+  timestamp: BigInt
+): void {
+  // This would require iterating through all holders
+  // For now, we'll create upcoming payouts when users interact with the system
+  // In a real implementation, you might want to use a different approach
+}
+
+function notifyHoldersAboutPayout(
+  wrappedTokenAddress: Address, 
+  amount: BigInt, 
+  timestamp: BigInt
+): void {
+  // This would notify all holders about available payout
+  // Implementation would depend on how you want to handle bulk notifications
+}
+
+function notifyHoldersAboutEmergencyUnlock(
+  wrappedTokenAddress: Address, 
+  penalty: BigInt, 
+  timestamp: BigInt
+): void {
+  // This would notify all holders about emergency unlock availability
+  // Implementation would depend on your notification strategy
+}
+
+function getTokenSymbol(tokenAddress: Bytes): string {
+  if (tokenAddress.equals(Address.zero())) {
+    return "ETH"
+  }
   
-  pauseEvent.wrappedToken = event.address
-  pauseEvent.action = "unpaused"
-  pauseEvent.account = event.params.account
-  pauseEvent.blockNumber = event.block.number
-  pauseEvent.blockTimestamp = event.block.timestamp
-  pauseEvent.transactionHash = event.transaction.hash
-  pauseEvent.save()
-}
-
-function getRoundNumber(wrappedTokenAddress: Address, timestamp: BigInt): BigInt {
-  // Simple round numbering based on timestamp
-  // In practice, you might want to track this more precisely
-  return timestamp.div(BigInt.fromI32(86400)) // Daily rounds
+  // Try to get symbol from contract
+  return "TOKEN"
 }
