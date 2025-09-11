@@ -108,6 +108,8 @@ type UserPayout @entity(immutable: true) {
   # Payout Details
   wrappedToken: WrappedToken!
   wrappedTokenAddress: Bytes!
+  payoutDistribution: PayoutDistribution
+  payoutPeriod: PayoutPeriod
   amount: BigInt!
   payoutToken: Bytes!
   payoutTokenSymbol: String
@@ -154,9 +156,6 @@ type UserWrappedTokenHolding @entity {
   # Timestamps
   firstInvestmentAt: BigInt!
   lastActivityAt: BigInt!
-  
-  # Derived relationships
-  payouts: [UserPayout!]! @derivedFrom(field: "user")
 }
 
 type UserEmergencyUnlock @entity(immutable: true) {
@@ -375,9 +374,6 @@ type PayoutDistribution @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-  
-  # Derived relationships
-  claims: [UserPayout!]! @derivedFrom(field: "payoutDistribution")
 }
 
 # ============================================
@@ -529,9 +525,6 @@ type PayoutPeriod @entity {
   # Transaction Info
   blockNumber: BigInt!
   transactionHash: Bytes!
-  
-  # Derived relationships
-  claims: [UserPayout!]! @derivedFrom(field: "payoutPeriod")
 }
 
 # ============================================

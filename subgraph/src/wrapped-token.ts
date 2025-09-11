@@ -120,8 +120,8 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   if (!wrappedToken) return
 
   // Create payout distribution record
-  let distributionId = event.transaction.hash.concatI32(event.logIndex.toI32())
-  let distribution = new PayoutDistribution(distributionId)
+  let distributionId = event.address.toHexString() + "-" + event.params.period.toString() + "-distribution"
+  let distribution = new PayoutDistribution(Bytes.fromUTF8(distributionId))
   
   distribution.wrappedToken = event.address
   distribution.wrappedTokenAddress = event.address
@@ -212,6 +212,19 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   userPayout.blockNumber = event.block.number
   userPayout.blockTimestamp = event.block.timestamp
   userPayout.transactionHash = event.transaction.hash
+  
+  // Link to payout distribution and period
+  let distributionId = event.address.toHexString() + "-" + event.params.period.toString() + "-distribution"
+  let payoutDistribution = PayoutDistribution.load(Bytes.fromUTF8(distributionId))
+  if (payoutDistribution) {
+    userPayout.payoutDistribution = payoutDistribution.id
+  }
+  
+  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
+  let payoutPeriod = PayoutPeriod.load(Bytes.fromUTF8(periodId))
+  if (payoutPeriod) {
+    userPayout.payoutPeriod = payoutPeriod.id
+  }
   
   // Get user's wrapped token balance for share calculation
   let holdingId = event.params.user.toHexString() + "-" + event.address.toHexString()

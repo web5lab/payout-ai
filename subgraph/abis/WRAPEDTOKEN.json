@@ -30,7 +30,7 @@
           },
           {
             "internalType": "uint256",
-            "name": "payoutRate",
+            "name": "payoutAPR",
             "type": "uint256"
           },
           {
@@ -42,9 +42,14 @@
             "internalType": "address",
             "name": "admin",
             "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "payoutPeriodDuration",
+            "type": "uint256"
           }
         ],
-        "internalType": "struct WrapedTokenConfig",
+        "internalType": "struct WrappedTokenConfig",
         "name": "config",
         "type": "tuple"
       }
@@ -54,32 +59,12 @@
   },
   {
     "inputs": [],
-    "name": "AlreadyUnlocked",
+    "name": "AlreadyClaimed",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "Claimed",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InsufficientFunds",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidAmt",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidPenalty",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "InvalidStablecoin",
+    "name": "InvalidAmount",
     "type": "error"
   },
   {
@@ -94,12 +79,12 @@
   },
   {
     "inputs": [],
-    "name": "NoDeposit",
+    "name": "NotMatured",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "NoPayout",
+    "name": "NoDeposit",
     "type": "error"
   },
   {
@@ -109,27 +94,57 @@
   },
   {
     "inputs": [],
-    "name": "NotMatured",
+    "name": "NoPayout",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "PayoutPeriodNotElapsed",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "PeriodNotElapsed",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "TransferFailed",
+    "name": "InsufficientFunds",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "UnlockDisabled",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidPenalty",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidStablecoin",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PayoutNotAvailable",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidConfiguration",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "Unauthorized",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidAPR",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FirstPayoutDateNotSet",
     "type": "error"
   },
   {
@@ -161,6 +176,125 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "value",
+        "type": "uint256"
+      }
+    ],
+    "name": "Transfer",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "tokenAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "usdtValue",
+        "type": "uint256"
+      }
+    ],
+    "name": "InvestmentRegistered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "period",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "totalUSDTAtDistribution",
+        "type": "uint256"
+      }
+    ],
+    "name": "PayoutDistributed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "period",
+        "type": "uint256"
+      }
+    ],
+    "name": "PayoutClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "FinalTokensClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": false,
         "internalType": "uint256",
         "name": "penalty",
@@ -168,6 +302,12 @@
       }
     ],
     "name": "EmergencyUnlockEnabled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "EmergencyUnlockDisabled",
     "type": "event"
   },
   {
@@ -199,281 +339,23 @@
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
         "indexed": false,
         "internalType": "uint256",
-        "name": "amount",
+        "name": "firstPayoutDate",
         "type": "uint256"
       }
     ],
-    "name": "FinalTokensClaimed",
+    "name": "FirstPayoutDateSet",
     "type": "event"
   },
   {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "IndividualPayoutClaimed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "Paused",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "remainingBalance",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayoutClaimed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalFunds",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayoutFundsAdded",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "period",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "startTime",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayoutPeriodStarted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "period",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalFunds",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayoutDistributed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "previousAdminRole",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "newAdminRole",
-        "type": "bytes32"
-      }
-    ],
-    "name": "RoleAdminChanged",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "sender",
-        "type": "address"
-      }
-    ],
-    "name": "RoleGranted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "sender",
-        "type": "address"
-      }
-    ],
-    "name": "RoleRevoked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "from",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "to",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "value",
-        "type": "uint256"
-      }
-    ],
-    "name": "Transfer",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "Unpaused",
-    "type": "event"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "addPayoutFunds",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "balanceOf",
+    "inputs": [],
+    "name": "name",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "string",
         "name": "",
-        "type": "uint256"
+        "type": "string"
       }
     ],
     "stateMutability": "view",
@@ -481,40 +363,12 @@
   },
   {
     "inputs": [],
-    "name": "claimFinalTokens",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "claimPayout",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "claimTotalPayout",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "emergencyUnlock",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "emergencyUnlockEnabled",
+    "name": "symbol",
     "outputs": [
       {
-        "internalType": "bool",
+        "internalType": "string",
         "name": "",
-        "type": "bool"
+        "type": "string"
       }
     ],
     "stateMutability": "view",
@@ -522,41 +376,25 @@
   },
   {
     "inputs": [],
-    "name": "emergencyUnlockPenalty",
+    "name": "peggedToken",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "contract IERC20",
         "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_user",
         "type": "address"
       }
     ],
-    "name": "getUserPayoutBalance",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "payoutToken",
     "outputs": [
       {
-        "internalType": "uint256",
-        "name": "totalAvailable",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "claimed",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "claimable",
-        "type": "uint256"
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -577,121 +415,7 @@
   },
   {
     "inputs": [],
-    "name": "name",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "",
-        "type": "string"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "payoutRate",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "payoutToken",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "peggedToken",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_user",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "enum IWRAPEDTOKEN.PayoutFrequency",
-        "name": "_payoutFrequency",
-        "type": "uint8"
-      }
-    ],
-    "name": "registerInvestment",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "symbol",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "",
-        "type": "string"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalEscrowed",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalPayoutFunds",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalSupply",
+    "name": "payoutAPR",
     "outputs": [
       {
         "internalType": "uint256",
@@ -743,7 +467,7 @@
   },
   {
     "inputs": [],
-    "name": "getNextPayoutTime",
+    "name": "totalSupply",
     "outputs": [
       {
         "internalType": "uint256",
@@ -756,7 +480,33 @@
   },
   {
     "inputs": [],
-    "name": "isPayoutPeriodAvailable",
+    "name": "totalEscrowed",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalUSDTInvested",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "emergencyUnlockEnabled",
     "outputs": [
       {
         "internalType": "bool",
@@ -769,27 +519,31 @@
   },
   {
     "inputs": [],
-    "name": "getCurrentPayoutPeriodInfo",
+    "name": "emergencyUnlockPenalty",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "period",
+        "name": "",
         "type": "uint256"
-      },
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "balanceOf",
+    "outputs": [
       {
         "internalType": "uint256",
-        "name": "lastDistributionTime",
+        "name": "",
         "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "nextPayoutTime",
-        "type": "uint256"
-      },
-      {
-        "internalType": "bool",
-        "name": "canDistribute",
-        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -801,22 +555,21 @@
         "internalType": "address",
         "name": "_user",
         "type": "address"
-      }
-    ],
-    "name": "getUserClaimablePeriods",
-    "outputs": [
-      {
-        "internalType": "uint256[]",
-        "name": "periods",
-        "type": "uint256[]"
       },
       {
-        "internalType": "uint256[]",
-        "name": "amounts",
-        "type": "uint256[]"
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "usdValue",
+        "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "name": "registerInvestment",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -840,6 +593,91 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "claimFinalTokens",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_penaltyPercentage",
+        "type": "uint256"
+      }
+    ],
+    "name": "enableEmergencyUnlock",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "disableEmergencyUnlock",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "emergencyUnlock",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "setFirstPayoutDate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
+      }
+    ],
+    "name": "getUserPayoutInfo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "totalClaimable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalClaimed",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastClaimedPeriod",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "userUSDTValue",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "claimablePeriods",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "claimableAmounts",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -855,128 +693,27 @@
         "type": "uint256"
       },
       {
+        "internalType": "uint256",
+        "name": "usdtValue",
+        "type": "uint256"
+      },
+      {
         "internalType": "bool",
-        "name": "hasClaimedTokens",
+        "name": "hasClaimedFinalTokens",
         "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "lastPayoutTime",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalPayoutsClaimed",
-        "type": "uint256"
-      },
-      {
-        "internalType": "enum WRAPEDTOKEN.PayoutFrequency",
-        "name": "payoutFrequency",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint256",
-        "name": "payoutAmountPerPeriod",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalPayoutBalance",
-        "type": "uint256"
       },
       {
         "internalType": "bool",
         "name": "emergencyUnlocked",
         "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "DEFAULT_ADMIN_ROLE",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "PAYOUT_ADMIN_ROLE",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
       },
       {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "hasRole",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
+        "internalType": "uint256",
+        "name": "totalPayoutsClaimed",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "grantRole",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "revokeRole",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   }
 ]
