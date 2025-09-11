@@ -3,7 +3,7 @@ import {
 } from "../generated/WrappedTokenFactory/WrappedTokenFactory"
 import { WRAPEDTOKEN as WrappedTokenContract } from "../generated/WrappedTokenFactory/WRAPEDTOKEN"
 import { User, WrappedToken, WrappedTokenDeployment } from "../generated/schema"
-import { BigInt, Bytes } from "@graphprotocol/graph-ts"
+import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"
 import { WRAPEDTOKEN as WrappedTokenTemplate } from "../generated/templates"
 
