@@ -8,7 +8,8 @@ import {
 } from "../generated/templates/Offering/Offering"
 import { 
   Offering,
-  OfferingPerformance
+  OfferingPerformance,
+  User
 } from "../generated/schema"
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
 import { 

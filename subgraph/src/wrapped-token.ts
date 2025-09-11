@@ -14,7 +14,9 @@ import {
   UserPayout,
   UserEmergencyUnlock,
   UserClaim,
-  PayoutDistribution
+  PayoutDistribution,
+  UserNotification,
+  UserActivityHistory
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { 

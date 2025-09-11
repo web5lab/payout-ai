@@ -123,7 +123,7 @@ export function createUserNotification(
   timestamp: BigInt,
   relatedOffering: Bytes | null = null,
   relatedWrappedToken: Bytes | null = null,
-  relatedAmount: BigInt | null = null
+  relatedAmount: BigInt = BigInt.fromI32(0)
 ): void {
   let notificationId = userAddress.toHexString() + "-" + timestamp.toString() + "-" + notificationType
   let notification = new UserNotification(Bytes.fromUTF8(notificationId))
@@ -139,7 +139,7 @@ export function createUserNotification(
   notification.createdAt = timestamp
   notification.relatedOffering = relatedOffering
   notification.relatedWrappedToken = relatedWrappedToken
-  notification.relatedAmount = relatedAmount || BigInt.fromI32(0)
+  notification.relatedAmount = relatedAmount
   
   notification.save()
 }
