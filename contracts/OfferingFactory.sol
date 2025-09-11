@@ -165,6 +165,12 @@ contract OfferingFactory is Ownable {
         offering.initialize(initConfig);
         offeringAddress = address(offering);
 
+        // Register the offering with the Escrow contract
+        IEscrow(config.escrowAddress).registerOffering(
+            offeringAddress,
+            config.tokenOwner
+        );
+
         _storeOffering(offeringAddress, config.tokenOwner);
     }
 
@@ -230,6 +236,12 @@ contract OfferingFactory is Ownable {
 
         offering.initialize(initConfig);
         offeringAddress = address(offering);
+
+        // Register the offering with the Escrow contract
+        IEscrow(config.escrowAddress).registerOffering(
+            offeringAddress,
+            config.tokenOwner
+        );
 
         _configurePaymentTokens(offering, paymentTokens, oracles);
         _storeOffering(offeringAddress, config.tokenOwner);

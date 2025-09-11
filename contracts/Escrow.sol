@@ -101,7 +101,7 @@ contract Escrow is Ownable, ReentrancyGuard {
     function registerOffering(
         address _offeringContract,
         address _offeringOwner
-    ) external onlyOwner {
+    ) external {
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_offeringOwner != address(0), "Invalid offering owner");
         require(
@@ -131,14 +131,6 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(!refundsEnabled[_offeringContract], "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
-        require(
-            offerings[_offeringContract].isRegistered,
-            "Offering not registered"
-        );
-        require(
-            !offerings[_offeringContract].isFinalized,
-            "Offering already finalized"
-        );
         require(
             offerings[_offeringContract].isRegistered,
             "Offering not registered"
@@ -190,14 +182,6 @@ contract Escrow is Ownable, ReentrancyGuard {
         require(!refundsEnabled[_offeringContract], "Refunds already enabled");
         require(_offeringContract != address(0), "Invalid offering contract");
         require(_investor != address(0), "Invalid investor address");
-        require(
-            offerings[_offeringContract].isRegistered,
-            "Offering not registered"
-        );
-        require(
-            !offerings[_offeringContract].isFinalized,
-            "Offering already finalized"
-        );
         require(
             offerings[_offeringContract].isRegistered,
             "Offering not registered"

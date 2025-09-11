@@ -36,6 +36,10 @@ interface IEscrow {
         uint256 amount
     ) external;
     function enableRefundsByOffering() external;
+    function registerOffering(
+        address _offeringContract,
+        address _offeringOwner
+    ) external;
 }
 
 struct InitConfig {
@@ -260,21 +264,15 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(totalRaised + usdValue <= fundraisingCap, "Exceeds cap");
 
         // Additional safety checks for investment limits
-        require(
-            usdValue <= type(uint128).max,
-            "Investment amount too large"
-        );
+        require(usdValue <= type(uint128).max, "Investment amount too large");
         require(
             totalRaised <= type(uint128).max - usdValue,
             "Total raised would overflow"
         );
-        
+
         uint256 tokensToReceive = (usdValue * 1e18) / tokenPrice;
         require(tokensToReceive > 0, "Token amount too low");
-        require(
-            tokensToReceive <= type(uint128).max,
-            "Token amount too large"
-        );
+        require(tokensToReceive <= type(uint128).max, "Token amount too large");
 
         // Update investment tracking
         totalRaised += usdValue;
@@ -295,7 +293,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         } else {
             // ERC20 payment to Escrow
             require(msg.value == 0, "Do not send ETH for token payment");
-            
+
             // Check transfer success
             bool transferSuccess = IERC20(paymentToken).transferFrom(
                 investor,
@@ -303,11 +301,14 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
                 paymentAmount
             );
             require(transferSuccess, "Payment token transfer failed");
-            
+
             // Check approval success
-            bool approvalSuccess = IERC20(paymentToken).approve(escrowAddress, paymentAmount);
+            bool approvalSuccess = IERC20(paymentToken).approve(
+                escrowAddress,
+                paymentAmount
+            );
             require(approvalSuccess, "Payment token approval failed");
-            
+
             // Use low-level call for escrow interaction
             (bool success, ) = escrowAddress.call(
                 abi.encodeWithSignature(
@@ -356,7 +357,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
 
         (int224 value, uint32 timestamp) = IApi3ReaderProxy(oracle).read();
         require(value > 0, "Invalid price");
-        
+
         // Validate price freshness to prevent stale price exploitation
         require(
             block.timestamp - timestamp <= MAX_PRICE_STALENESS,
@@ -372,7 +373,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
             (amount * uint256(int256(value)) * 1e18) /
             (10 ** tokenDecimals) /
             1e18;
-        
+
         // Additional overflow check
         require(usdValue > 0, "USD value calculation overflow");
     }
