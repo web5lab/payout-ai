@@ -45,6 +45,41 @@ type User @entity {
   activityHistory: [UserActivityHistory!]! @derivedFrom(field: "user")
 }
 
+type UserOfferingInvestment @entity {
+  id: Bytes! # user address + offering address
+  user: User!
+  userAddress: Bytes!
+  offering: Offering!
+  offeringAddress: Bytes!
+  
+  # Aggregated investment data
+  totalInvestments: BigInt!
+  totalPaidAmount: BigInt!
+  totalUSDValue: BigInt!
+  totalTokensReceived: BigInt!
+  totalWrappedTokensReceived: BigInt!
+  
+  # Payment method breakdown
+  totalETHInvested: BigInt!
+  totalERC20Invested: BigInt!
+  
+  # KYB tracking
+  totalKYBValidatedInvestments: BigInt!
+  
+  # Status tracking
+  hasClaimedTokens: Boolean!
+  totalTokensClaimed: BigInt!
+  hasReceivedRefund: Boolean!
+  totalRefundReceived: BigInt!
+  
+  # Timestamps
+  firstInvestmentAt: BigInt!
+  lastInvestmentAt: BigInt!
+  
+  # Link to individual investments
+  individualInvestments: [UserInvestment!]! @derivedFrom(field: "aggregatedInvestment")
+}
+
 # ============================================
 # USER ACTIVITY ENTITIES
 # ============================================
