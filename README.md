@@ -73,10 +73,10 @@ To deploy the `OfferingFactory` contract:
 
 ```shell
 # Deploy to a testnet (e.g., Lumia Testnet)
-npx hardhat ignition deploy ignition/modules/FullDeploymentModule.js --network lumiaTestnet --verify
+npx hardhat ignition deploy ignition/modules/FullDeploymentModule.cjs --network lumiaTestnet --verify
 
 # Deploy to mainnet and verify
-npx hardhat ignition deploy ignition/modules/FullDeploymentModule.js --network lumiaMainnet --verify
+npx hardhat ignition deploy ignition/modules/FullDeploymentModule.cjs --network lumiaMainnet --verify
 ```
 
 To verify a contract manually:

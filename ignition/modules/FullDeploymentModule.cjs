@@ -32,46 +32,41 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
     true // fresh data
   ], { id: "MockV3Aggregator_UsdtOracle" });
 
-  // 3) Deploy the WrappedTokenFactory contract first
-  const wrappedTokenFactory = m.contract("WrappedTokenFactory");
-
-  // 4) Deploy the OfferingFactory contract with WrappedTokenFactory address
-  const offeringFactory = m.contract("OfferingFactory", [wrappedTokenFactory]);
-
-  // 5) Deploy the InvestmentManager contract
-  const investmentManager = m.contract("InvestmentManager");
-
-  // 6) Deploy the Escrow contract with proper config
-  const escrow = m.contract("Escrow", [{ owner: deployer }]);
-
-  // 7) Set USDT config in OfferingFactory
-  m.call(offeringFactory, "setUSDTConfig", [mockUSDT, usdtOracle]);
-
-  // 8) Create an Offering with APY enabled
+  // Calculate future dates for WrappedToken
   const now = Math.floor(Date.now() / 1000); // Current timestamp in seconds
   const oneDay = 24 * 60 * 60;
   const oneYear = 365 * oneDay;
 
-  const createOfferingConfig = {
-    saleToken: mockSaleToken,
-    minInvestment: ethers.parseUnits("100", 18),
-    maxInvestment: ethers.parseUnits("10000", 18),
-    startDate: now + 2 * oneDay, // Starts in two days to ensure it's strictly in the future
-    endDate: now + 30 * oneDay, // Ends in 30 days
-    apyEnabled: true,
-    softCap: ethers.parseUnits("100000", 18),
-    fundraisingCap: ethers.parseUnits("1000000", 18),
-    tokenPrice: ethers.parseUnits("1", 18), // 1 SaleToken = 1 USD
-    tokenOwner: deployer,
-    escrowAddress: escrow,
-    investmentManager: investmentManager,
-    payoutTokenAddress: mockPayoutToken,
-    payoutRate: 500, // 5% APY (500 basis points)
-    payoutPeriodDuration: oneYear, // Yearly payouts
+  // 3) Deploy a WrappedToken contract directly
+  const wrappedTokenConfig = {
+    name: "Directly Deployed Wrapped USDT",
+    symbol: "DD-wUSDT",
+    peggedToken: mockUSDT,
+    payoutToken: mockPayoutToken,
     maturityDate: now + 2 * oneYear, // Matures in 2 years
+    payoutAPR: 500, // 5% APY (500 basis points)
+    offeringContract: deployer, // Placeholder, will be updated if an Offering is deployed directly
+    admin: deployer,
+    payoutPeriodDuration: oneYear, // Yearly payouts
   };
+  const directWrappedToken = m.contract("WRAPPEDTOKEN", [wrappedTokenConfig], { id: "DirectWrappedToken" });
 
-  const offering = m.call(offeringFactory, "createOffering", [createOfferingConfig]);
+  // 4) Deploy the WrappedTokenFactory contract
+  const wrappedTokenFactory = m.contract("WrappedTokenFactory");
+
+  // 5) Deploy the OfferingFactory contract with WrappedTokenFactory address
+  const offeringFactory = m.contract("OfferingFactory", [wrappedTokenFactory]);
+
+  // 6) Deploy the InvestmentManager contract
+  const investmentManager = m.contract("InvestmentManager");
+
+  // 7) Deploy the Escrow contract with proper config
+  const escrow = m.contract("Escrow", [{ owner: deployer }]);
+
+  // 8) Deploy an Offering contract directly
+  const directOffering = m.contract("Offering", [], { id: "DirectOffering" });
+
+
 
   return { 
     // Core contracts
@@ -79,7 +74,8 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
     wrappedTokenFactory, 
     investmentManager, 
     escrow,
-    offering, // Return the created offering
+    directWrappedToken, // Return the directly deployed WrappedToken
+    directOffering, // Return the directly deployed Offering
 
     // Mock tokens for testing
     mockSaleToken,
