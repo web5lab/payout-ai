@@ -54,6 +54,19 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   
   offering.save()
 
+  // Create offering deployment record
+  let deploymentId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let deployment = new OfferingDeployment(deploymentId)
+  deployment.offeringId = event.params.offeringId
+  deployment.creator = event.params.creator
+  deployment.creatorAddress = event.params.creator
+  deployment.offeringAddress = event.params.offeringAddress
+  deployment.tokenOwner = event.params.tokenOwner
+  deployment.blockNumber = event.block.number
+  deployment.blockTimestamp = event.block.timestamp
+  deployment.transactionHash = event.transaction.hash
+  deployment.save()
+  
   // Update user activity
   updateUserActivity(
     event.params.creator,

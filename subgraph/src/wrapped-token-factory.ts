@@ -1,7 +1,7 @@
 import {
   WrappedTokenDeployed as WrappedTokenDeployedEvent
 } from "../generated/WrappedTokenFactory/WrappedTokenFactory"
-import { User, WrappedToken } from "../generated/schema"
+import { User, WrappedToken, WrappedTokenDeployment } from "../generated/schema"
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"
 
@@ -41,6 +41,19 @@ export function handleWrappedTokenDeployed(event: WrappedTokenDeployedEvent): vo
   
   wrappedToken.save()
 
+  // Create wrapped token deployment record
+  let deploymentId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let deployment = new WrappedTokenDeployment(deploymentId)
+  deployment.tokenId = event.params.tokenId
+  deployment.creator = event.params.creator
+  deployment.creatorAddress = event.params.creator
+  deployment.wrappedTokenAddress = event.params.wrappedTokenAddress
+  deployment.offeringContract = event.params.offeringContract
+  deployment.blockNumber = event.block.number
+  deployment.blockTimestamp = event.block.timestamp
+  deployment.transactionHash = event.transaction.hash
+  deployment.save()
+  
   // Update user activity
   updateUserActivity(
     event.params.creator,

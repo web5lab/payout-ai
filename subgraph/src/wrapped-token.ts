@@ -16,7 +16,6 @@ import {
   UserClaim,
   PayoutDistribution,
   PayoutPeriod,
-  UserUpcomingPayout,
   PayoutEvent,
   EmergencyEvent
 } from "../generated/schema"

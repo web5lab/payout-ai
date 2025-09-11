@@ -4,7 +4,14 @@ import {
   RefundClaimed as RefundClaimedEvent,
   KYBValidatedInvestment as KYBValidatedInvestmentEvent
 } from "../generated/InvestmentManager/InvestmentManager"
-import { UserInvestment, UserClaim } from "../generated/schema"
+import { 
+  UserInvestment, 
+  UserClaim, 
+  UserRefund,
+  UserKYBValidation,
+  InvestmentEvent,
+  RefundEvent
+} from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"
 

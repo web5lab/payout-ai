@@ -40,6 +40,8 @@ type User @entity {
   emergencyUnlocks: [UserEmergencyUnlock!]! @derivedFrom(field: "user")
   refunds: [UserRefund!]! @derivedFrom(field: "user")
   kybValidations: [UserKYBValidation!]! @derivedFrom(field: "user")
+  notifications: [UserNotification!]! @derivedFrom(field: "user")
+  activityHistory: [UserActivityHistory!]! @derivedFrom(field: "user")
 }
 
 # ============================================
@@ -73,8 +75,8 @@ type UserInvestment @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-  gasUsed: BigInt
-  gasPrice: BigInt
+  gasUsed: BigInt!
+  gasPrice: BigInt!
 }
 
 type UserClaim @entity(immutable: true) {
@@ -85,7 +87,7 @@ type UserClaim @entity(immutable: true) {
   # Claim Details
   offering: Offering
   offeringAddress: Bytes!
-  claimType: String! # "investment_tokens", "wrapped_payout", "final_tokens", "refund"
+  claimType: String! # "investment_tokens", "wrapped_payout", "final_tokens", "refund", "emergency_unlock"
   amount: BigInt!
   tokenAddress: Bytes!
   tokenSymbol: String
@@ -108,14 +110,12 @@ type UserPayout @entity(immutable: true) {
   # Payout Details
   wrappedToken: WrappedToken!
   wrappedTokenAddress: Bytes!
-  payoutDistribution: PayoutDistribution
-  payoutPeriod: PayoutPeriod
   amount: BigInt!
   payoutToken: Bytes!
   payoutTokenSymbol: String
   
   # Payout Context
-  payoutPeriod: BigInt!
+  period: BigInt!
   isPartialClaim: Boolean!
   remainingClaimable: BigInt!
   
@@ -128,4 +128,571 @@ type UserPayout @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
+
+type UserWrappedTokenHolding @entity {
+  id: Bytes! # userAddress-wrappedTokenAddress
+  user: User!
+  userAddress: Bytes!
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  
+  # Holdings Info
+  currentBalance: BigInt!
+  originalInvestment: BigInt!
+  usdValueInvested: BigInt!
+  
+  # Payout Info
+  totalPayoutsReceived: BigInt!
+  totalPayoutsClaimed: BigInt!
+  currentClaimablePayouts: BigInt!
+  lastClaimedPeriod: BigInt!
+  
+  # Status
+  isActive: Boolean!
+  hasClaimedFinal: Boolean!
+  hasEmergencyUnlocked: Boolean!
+  
+  # Timestamps
+  firstInvestmentAt: BigInt!
+  lastActivityAt: BigInt!
+}
+
+type UserEmergencyUnlock @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  user: User!
+  userAddress: Bytes!
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  
+  # Emergency Unlock Details
+  originalAmount: BigInt!
+  penaltyAmount: BigInt!
+  receivedAmount: BigInt!
+  penaltyPercentage: BigInt! # basis points
+  totalPayoutsClaimedBefore: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+  unlockedAt: BigInt!
+}
+
+type UserRefund @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  user: User!
+  userAddress: Bytes!
+  offering: Offering!
+  offeringAddress: Bytes!
+  
+  # Refund Details
+  amount: BigInt!
+  token: Bytes!
+  tokenSymbol: String
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type UserKYBValidation @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  user: User!
+  userAddress: Bytes!
+  
+  # KYB Details
+  validator: Bytes!
+  signatureHash: Bytes!
+  
+  # Associated Investment
+  investment: UserInvestment
+  offeringAddress: Bytes!
+  investmentAmount: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# OFFERING ENTITIES
+# ============================================
+
+type Offering @entity {
+  id: Bytes! # offering contract address
+  creator: User!
+  creatorAddress: Bytes!
+  tokenOwner: Bytes!
+  
+  # Token Details
+  saleToken: Bytes!
+  saleTokenSymbol: String!
+  
+  # Investment Parameters
+  minInvestment: BigInt!
+  maxInvestment: BigInt!
+  startDate: BigInt!
+  endDate: BigInt!
+  maturityDate: BigInt!
+  fundraisingCap: BigInt!
+  softCap: BigInt!
+  tokenPrice: BigInt!
+  
+  # Configuration
+  autoTransfer: Boolean!
+  apyEnabled: Boolean!
+  wrappedTokenAddress: Bytes
+  payoutTokenAddress: Bytes
+  payoutRate: BigInt!
+  
+  # Status
+  isActive: Boolean!
+  isFinalized: Boolean!
+  isCancelled: Boolean!
+  softCapReached: Boolean!
+  
+  # Statistics
+  totalRaised: BigInt!
+  totalInvestors: BigInt!
+  totalTokensDistributed: BigInt!
+  totalRefunded: BigInt!
+  
+  # Timestamps
+  createdAt: BigInt!
+  createdBlock: BigInt!
+  finalizedAt: BigInt
+  cancelledAt: BigInt
+  
+  # Derived relationships
+  investments: [UserInvestment!]! @derivedFrom(field: "offering")
+  claims: [UserClaim!]! @derivedFrom(field: "offering")
+  refunds: [UserRefund!]! @derivedFrom(field: "offering")
+  performance: OfferingPerformance @derivedFrom(field: "offering")
+}
+
+type OfferingPerformance @entity {
+  id: Bytes! # offering address
+  offering: Offering!
+  offeringAddress: Bytes!
+  
+  # Investor Metrics
+  totalInvestors: BigInt!
+  averageInvestmentSize: BigInt!
+  largestInvestment: BigInt!
+  smallestInvestment: BigInt!
+  
+  # Timing Metrics
+  raisedInFirst24Hours: BigInt!
+  raisedInFirstWeek: BigInt!
+  timeToSoftCap: BigInt!
+  timeToHardCap: BigInt!
+  
+  # Success Metrics
+  tokensClaimedPercentage: BigInt! # basis points
+  refundedPercentage: BigInt! # basis points
+  
+  # Payout Metrics (if APY enabled)
+  totalPayoutsDistributed: BigInt!
+  averagePayoutPerUser: BigInt!
+  emergencyUnlockRate: BigInt! # basis points
+  
+  # Last Updated
+  lastUpdated: BigInt!
+}
+
+# ============================================
+# WRAPPED TOKEN ENTITIES
+# ============================================
+
+type WrappedToken @entity {
+  id: Bytes! # wrapped token contract address
+  name: String!
+  symbol: String!
+  
+  # Linked Contracts
+  offering: Offering
+  offeringAddress: Bytes!
+  peggedToken: Bytes!
+  payoutToken: Bytes!
+  payoutTokenSymbol: String
+  
+  # Configuration
+  maturityDate: BigInt!
+  payoutAPR: BigInt!
+  payoutPeriodDuration: BigInt!
+  firstPayoutDate: BigInt!
+  
+  # Current State
+  currentPayoutPeriod: BigInt!
+  lastPayoutDistributionTime: BigInt!
+  totalSupply: BigInt!
+  totalEscrowed: BigInt!
+  totalUSDTInvested: BigInt!
+  
+  # Payout Statistics
+  totalPayoutFundsDistributed: BigInt!
+  totalPayoutsClaimed: BigInt!
+  currentPayoutFunds: BigInt!
+  
+  # Emergency Unlock
+  emergencyUnlockEnabled: Boolean!
+  emergencyUnlockPenalty: BigInt!
+  totalEmergencyUnlocks: BigInt!
+  
+  # Holder Statistics
+  totalHolders: BigInt!
+  activeHolders: BigInt!
+  
+  # Timestamps
+  createdAt: BigInt!
+  createdBlock: BigInt!
+  
+  # Derived relationships
+  holders: [UserWrappedTokenHolding!]! @derivedFrom(field: "wrappedToken")
+  payouts: [UserPayout!]! @derivedFrom(field: "wrappedToken")
+  emergencyUnlocks: [UserEmergencyUnlock!]! @derivedFrom(field: "wrappedToken")
+  payoutDistributions: [PayoutDistribution!]! @derivedFrom(field: "wrappedToken")
+}
+
+type PayoutDistribution @entity(immutable: true) {
+  id: Bytes! # wrappedTokenAddress-period-distribution
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  
+  # Distribution Details
+  period: BigInt!
+  amount: BigInt!
+  totalUSDTAtDistribution: BigInt!
+  distributedBy: Bytes!
+  
+  # Holder Info
+  eligibleHolders: BigInt!
+  totalEligibleBalance: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+  distributedAt: BigInt!
+}
+
+type PayoutPeriod @entity {
+  id: Bytes! # wrappedTokenAddress-period
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  
+  # Period Details
+  periodNumber: BigInt!
+  distributedAmount: BigInt!
+  totalUSDTAtDistribution: BigInt!
+  distributedAt: BigInt!
+  distributedBy: Bytes!
+  
+  # Claim Statistics
+  totalClaims: BigInt!
+  totalClaimedAmount: BigInt!
+  unclaimedAmount: BigInt!
+  claimRate: BigInt! # basis points
+  eligibleUsers: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# EVENT TRACKING ENTITIES
+# ============================================
+
+type InvestmentEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  eventType: String! # "routed", "kyb_validated"
+  investor: Bytes!
+  offering: Bytes!
+  paymentToken: Bytes!
+  amount: BigInt!
+  tokensReceived: BigInt!
+  isKYBValidated: Boolean!
+  isNativeETH: Boolean!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+  gasUsed: BigInt!
+  gasPrice: BigInt!
+}
+
+type PayoutEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  eventType: String! # "distributed", "claimed"
+  wrappedToken: Bytes!
+  user: Bytes
+  amount: BigInt!
+  period: BigInt!
+  
+  # Distribution Context
+  totalUSDTAtDistribution: BigInt!
+  eligibleHolders: BigInt!
+  userBalance: BigInt!
+  sharePercentage: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type EmergencyEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  eventType: String! # "enabled", "disabled", "used"
+  wrappedToken: Bytes!
+  user: Bytes
+  amount: BigInt!
+  penalty: BigInt!
+  penaltyPercentage: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type RefundEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  eventType: String! # "enabled", "claimed"
+  offering: Bytes!
+  user: Bytes
+  token: Bytes!
+  amount: BigInt!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# DEPLOYMENT TRACKING
+# ============================================
+
+type OfferingDeployment @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  offeringId: BigInt!
+  creator: User!
+  creatorAddress: Bytes!
+  offeringAddress: Bytes!
+  tokenOwner: Bytes!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type WrappedTokenDeployment @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  tokenId: BigInt!
+  creator: User!
+  creatorAddress: Bytes!
+  wrappedTokenAddress: Bytes!
+  offeringContract: Bytes!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# ANALYTICS ENTITIES
+# ============================================
+
+type GlobalStats @entity {
+  id: Bytes! # "global"
+  
+  # User Statistics
+  totalUsers: BigInt!
+  activeInvestors: BigInt!
+  totalCreators: BigInt!
+  
+  # Offering Statistics
+  totalOfferings: BigInt!
+  activeOfferings: BigInt!
+  totalOfferingVolume: BigInt!
+  
+  # Investment Statistics
+  totalInvestments: BigInt!
+  totalInvestmentVolume: BigInt!
+  
+  # Wrapped Token Statistics
+  totalWrappedTokens: BigInt!
+  activeWrappedTokens: BigInt!
+  totalWrappedTokenHolders: BigInt!
+  
+  # Payout Statistics
+  totalPayoutDistributions: BigInt!
+  totalPayoutVolume: BigInt!
+  totalPayoutsClaimed: BigInt!
+  
+  # Emergency Statistics
+  totalEmergencyUnlocks: BigInt!
+  totalPenaltiesPaid: BigInt!
+  
+  # Refund Statistics
+  totalRefunds: BigInt!
+  totalRefundVolume: BigInt!
+  
+  # KYB Statistics
+  totalKYBValidations: BigInt!
+  kybValidatedInvestments: BigInt!
+  
+  # Last Updated
+  lastUpdated: BigInt!
+}
+
+type UserDailyStats @entity {
+  id: Bytes! # userAddress-YYYY-MM-DD
+  user: User!
+  userAddress: Bytes!
+  date: String! # YYYY-MM-DD format
+  
+  # Daily Activity
+  investmentsCount: BigInt!
+  investmentVolume: BigInt!
+  claimsCount: BigInt!
+  claimedAmount: BigInt!
+  payoutsCount: BigInt!
+  payoutAmount: BigInt!
+  
+  # Cumulative Stats (as of this date)
+  totalInvestmentVolume: BigInt!
+  totalTokensHeld: BigInt!
+  totalPayoutsReceived: BigInt!
+}
+
+type UserMonthlyStats @entity {
+  id: Bytes! # userAddress-YYYY-MM
+  user: User!
+  userAddress: Bytes!
+  yearMonth: String! # YYYY-MM format
+  
+  # Monthly Activity
+  investmentsCount: BigInt!
+  investmentVolume: BigInt!
+  claimsCount: BigInt!
+  claimedAmount: BigInt!
+  payoutsCount: BigInt!
+  payoutAmount: BigInt!
+  
+  # Monthly Averages
+  avgInvestmentSize: BigInt!
+  avgPayoutSize: BigInt!
+}
+
+type DailySystemStats @entity {
+  id: Bytes! # YYYY-MM-DD
+  date: String! # YYYY-MM-DD format
+  
+  # Daily New Activity
+  newUsers: BigInt!
+  newOfferings: BigInt!
+  newWrappedTokens: BigInt!
+  newInvestments: BigInt!
+  
+  # Daily Volume
+  investmentVolume: BigInt!
+  payoutDistributions: BigInt!
+  payoutVolume: BigInt!
+  payoutClaims: BigInt!
+  emergencyUnlocks: BigInt!
+  emergencyVolume: BigInt!
+  refunds: BigInt!
+  refundVolume: BigInt!
+  
+  # Cumulative Totals (as of this date)
+  totalUsers: BigInt!
+  totalOfferings: BigInt!
+  totalInvestmentVolume: BigInt!
+}
+
+# ============================================
+# NOTIFICATION SYSTEM
+# ============================================
+
+type UserNotification @entity {
+  id: Bytes! # userAddress-timestamp-type
+  user: User!
+  userAddress: Bytes!
+  
+  # Notification Details
+  notificationType: String! # "payout_available", "maturity_approaching", "emergency_enabled", etc.
+  title: String!
+  message: String!
+  priority: String! # "low", "medium", "high", "urgent"
+  
+  # Status
+  isRead: Boolean!
+  isActionable: Boolean!
+  
+  # Context
+  relatedOffering: Bytes
+  relatedWrappedToken: Bytes
+  relatedAmount: BigInt
+  
+  # Timestamps
+  createdAt: BigInt!
+  readAt: BigInt
+  expiresAt: BigInt
+}
+
+type UserActivityHistory @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex-activityType
+  user: User!
+  userAddress: Bytes!
+  
+  # Activity Details
+  activityType: String! # "investment", "claim", "payout", "emergency", "refund", "offering_created"
+  description: String!
+  amount: BigInt!
+  
+  # Context
+  tokenAddress: Bytes
+  offeringAddress: Bytes
+  wrappedTokenAddress: Bytes
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# UPCOMING PAYOUT PREDICTIONS
+# ============================================
+
+type UserUpcomingPayout @entity {
+  id: Bytes! # userAddress-wrappedTokenAddress-nextPeriod
+  user: User!
+  userAddress: Bytes!
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  
+  # Prediction Details
+  expectedPeriod: BigInt!
+  expectedAmount: BigInt!
+  expectedDate: BigInt!
+  userBalance: BigInt!
+  sharePercentage: BigInt!
+  
+  # Status
+  isAvailable: Boolean!
+  hasBeenClaimed: Boolean!
+  
+  # Timestamps
+  calculatedAt: BigInt!
+  lastUpdated: BigInt!
 }
