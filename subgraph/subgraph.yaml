@@ -60,6 +60,8 @@ dataSources:
           file: ./abis/OfferingFactory.json
         - name: Offering
           file: ./abis/Offering.json
+        - name: ERC20
+          file: ./abis/ERC20.json
       eventHandlers:
         - event: OfferingDeployed(indexed uint256,indexed address,indexed address,address)
           handler: handleOfferingDeployed
@@ -87,6 +89,8 @@ dataSources:
           file: ./abis/WrappedTokenFactory.json
         - name: WRAPEDTOKEN
           file: ./abis/WRAPEDTOKEN.json
+        - name: ERC20
+          file: ./abis/ERC20.json
       eventHandlers:
         - event: WrappedTokenDeployed(indexed uint256,indexed address,indexed address,address)
           handler: handleWrappedTokenDeployed
