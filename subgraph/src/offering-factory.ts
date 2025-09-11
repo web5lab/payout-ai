@@ -4,8 +4,34 @@ import {
 import { Offering as OfferingContract } from "../generated/OfferingFactory/Offering"
 import { User, Offering, OfferingDeployment } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
+import { ethereum } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"
 import { Offering as OfferingTemplate } from "../generated/templates"
+
+// Add ERC20 interface for reading token metadata
+class ERC20 extends ethereum.SmartContract {
+  static bind(address: Address): ERC20 {
+    return new ERC20("ERC20", address)
+  }
+
+  try_symbol(): ethereum.CallResult<string> {
+    let result = super.tryCall("symbol", "symbol():(string)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toString())
+  }
+
+  try_name(): ethereum.CallResult<string> {
+    let result = super.tryCall("name", "name():(string)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toString())
+  }
+}
 
 export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   let creator = getOrCreateUser(event.params.creator, event.block.timestamp)
@@ -30,7 +56,7 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   // Read actual contract data
   let saleTokenResult = offeringContract.try_saleToken()
   offering.saleToken = saleTokenResult.reverted ? Bytes.empty() : saleTokenResult.value
-  offering.saleTokenSymbol = getTokenSymbol(offering.saleToken)
+  offering.saleTokenSymbol = getActualTokenSymbol(offering.saleToken)
   
   let minInvestmentResult = offeringContract.try_minInvestment()
   offering.minInvestment = minInvestmentResult.reverted ? BigInt.fromI32(0) : minInvestmentResult.value
@@ -118,11 +144,19 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   )
 }
 
-function getTokenSymbol(tokenAddress: Bytes): string {
+function getActualTokenSymbol(tokenAddress: Bytes): string {
   if (tokenAddress.equals(Address.zero())) {
     return "ETH"
   }
   
-  // For now return a generic symbol, could be enhanced with ERC20 binding
+  // Try to read actual symbol from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let symbolResult = erc20Contract.try_symbol()
+  
+  if (!symbolResult.reverted) {
+    return symbolResult.value
+  }
+  
+  // Fallback to generic symbol if contract call fails
   return "TOKEN"
 }
