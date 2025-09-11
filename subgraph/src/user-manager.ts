@@ -1,5 +1,5 @@
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
-import { User } from "../generated/schema"
+import { User, UserNotification, UserActivityHistory, GlobalStats } from "../generated/schema"
 
 export function getOrCreateUser(userAddress: Bytes, timestamp: BigInt): User {
   let user = User.load(userAddress)

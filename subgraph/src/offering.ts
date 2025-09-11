@@ -8,13 +8,10 @@ import {
 } from "../generated/templates/Offering/Offering"
 import { 
   Offering,
-  OfferingPerformance,
-  UserInvestment,
-  RefundEvent
+  OfferingPerformance
 } from "../generated/schema"
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
 import { 
-  updateGlobalStats,
   createUserNotification
 } from "./user-manager"
 
@@ -146,9 +143,6 @@ export function handleSaleClosed(event: SaleClosedEvent): void {
   offering.totalRaised = event.params.totalRaised
   offering.save()
 
-  // Update global active offerings count
-  updateGlobalStats("offering", BigInt.fromI32(1), event.block.timestamp, false)
-  
   // Notify creator about sale closure
   createUserNotification(
     offering.creatorAddress,
@@ -190,17 +184,6 @@ export function handleOfferingCancelled(event: OfferingCancelledEvent): void {
   offering.cancelledAt = event.params.timestamp
   offering.save()
 
-  // Create refund enabled event
-  let refundEventId = event.transaction.hash.concatI32(event.logIndex.toI32())
-  let refundEvent = new RefundEvent(refundEventId)
-  refundEvent.eventType = "enabled"
-  refundEvent.offering = event.address
-  refundEvent.amount = BigInt.fromI32(0)
-  refundEvent.blockNumber = event.block.number
-  refundEvent.blockTimestamp = event.block.timestamp
-  refundEvent.transactionHash = event.transaction.hash
-  refundEvent.save()
-  
   // Notify creator about cancellation
   createUserNotification(
     offering.creatorAddress,

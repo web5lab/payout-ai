@@ -14,15 +14,12 @@ import {
   UserPayout,
   UserEmergencyUnlock,
   UserClaim,
-  PayoutDistribution,
-  PayoutPeriod
+  PayoutDistribution
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { 
   getOrCreateUser, 
   updateUserActivity, 
-  updateGlobalStats,
-  calculateSharePercentage,
   createUserNotification,
   checkAndCreatePayoutNotifications,
   checkAndCreateMaturityNotifications
@@ -136,26 +133,6 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   
   distribution.save()
 
-  // Create payout period record
-  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
-  let payoutPeriod = new PayoutPeriod(Bytes.fromUTF8(periodId))
-  
-  payoutPeriod.wrappedToken = event.address
-  payoutPeriod.wrappedTokenAddress = event.address
-  payoutPeriod.periodNumber = event.params.period
-  payoutPeriod.distributedAmount = event.params.amount
-  payoutPeriod.totalUSDTAtDistribution = event.params.totalUSDTAtDistribution
-  payoutPeriod.distributedAt = event.block.timestamp
-  payoutPeriod.distributedBy = event.transaction.from
-  payoutPeriod.totalClaims = BigInt.fromI32(0)
-  payoutPeriod.totalClaimedAmount = BigInt.fromI32(0)
-  payoutPeriod.unclaimedAmount = event.params.amount
-  payoutPeriod.claimRate = BigInt.fromI32(0)
-  payoutPeriod.eligibleUsers = wrappedToken.activeHolders
-  payoutPeriod.blockNumber = event.block.number
-  payoutPeriod.transactionHash = event.transaction.hash
-  
-  payoutPeriod.save()
 
   // Update wrapped token stats
   wrappedToken.currentPayoutPeriod = event.params.period
@@ -169,9 +146,6 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   
   // Notify all holders about available payout
   notifyHoldersAboutPayout(event.address, event.params.amount, event.block.timestamp)
-  
-  // Update global statistics
-  updateGlobalStats("payout_distribution", event.params.amount, event.block.timestamp)
 }
 
 export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
@@ -216,7 +190,7 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   
   if (holding) {
     userPayout.userWrappedBalance = holding.currentBalance
-    userPayout.sharePercentage = calculateSharePercentage(holding.currentBalance, wrappedToken.totalSupply)
+    userPayout.sharePercentage = holding.currentBalance.times(BigInt.fromI32(10000)).div(wrappedToken.totalSupply)
     
     // Update holding stats
     holding.totalPayoutsClaimed = holding.totalPayoutsClaimed.plus(event.params.amount)
@@ -231,22 +205,6 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   userPayout.totalWrappedSupply = wrappedToken.totalSupply
   userPayout.save()
 
-  // Update payout period stats
-  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
-  let payoutPeriod = PayoutPeriod.load(Bytes.fromUTF8(periodId))
-  if (payoutPeriod) {
-    payoutPeriod.totalClaims = payoutPeriod.totalClaims.plus(BigInt.fromI32(1))
-    payoutPeriod.totalClaimedAmount = payoutPeriod.totalClaimedAmount.plus(event.params.amount)
-    payoutPeriod.unclaimedAmount = payoutPeriod.unclaimedAmount.minus(event.params.amount)
-    
-    if (payoutPeriod.distributedAmount.gt(BigInt.fromI32(0))) {
-      payoutPeriod.claimRate = payoutPeriod.totalClaimedAmount
-        .times(BigInt.fromI32(10000))
-        .div(payoutPeriod.distributedAmount)
-    }
-    
-    payoutPeriod.save()
-  }
 
   // Update wrapped token stats
   wrappedToken.totalPayoutsClaimed = wrappedToken.totalPayoutsClaimed.plus(event.params.amount)
@@ -267,9 +225,6 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
     event.address
   )
 
-  // Update global statistics
-  updateGlobalStats("payout", event.params.amount, event.block.timestamp)
-  
   // Create payout success notification
   createUserNotification(
     event.params.user,
@@ -456,9 +411,6 @@ export function handleEmergencyUnlockUsed(event: EmergencyUnlockUsedEvent): void
     event.address
   )
 
-  // Update global statistics
-  updateGlobalStats("emergency", event.params.penalty, event.block.timestamp)
-  
   // Create emergency unlock notification
   createUserNotification(
     event.params.user,
