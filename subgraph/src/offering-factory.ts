@@ -57,6 +57,7 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   let saleTokenResult = offeringContract.try_saleToken()
   offering.saleToken = saleTokenResult.reverted ? Bytes.empty() : saleTokenResult.value
   offering.saleTokenSymbol = getActualTokenSymbol(offering.saleToken)
+  offering.saleTokenName = getActualTokenName(offering.saleToken)
   
   let minInvestmentResult = offeringContract.try_minInvestment()
   offering.minInvestment = minInvestmentResult.reverted ? BigInt.fromI32(0) : minInvestmentResult.value
@@ -159,4 +160,21 @@ function getActualTokenSymbol(tokenAddress: Bytes): string {
   
   // Fallback to generic symbol if contract call fails
   return "TOKEN"
+}
+
+function getActualTokenName(tokenAddress: Bytes): string {
+  if (tokenAddress.equals(Address.zero())) {
+    return "Ethereum"
+  }
+  
+  // Try to read actual name from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let nameResult = erc20Contract.try_name()
+  
+  if (!nameResult.reverted) {
+    return nameResult.value
+  }
+  
+  // Fallback to generic name if contract call fails
+  return "Token"
 }
