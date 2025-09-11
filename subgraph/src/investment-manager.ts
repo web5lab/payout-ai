@@ -8,6 +8,7 @@ import {
   UserInvestment, 
   UserClaim, 
   UserRefund,
+  UserOfferingInvestment,
   User
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
@@ -15,6 +16,47 @@ import { getOrCreateUser, updateUserActivity } from "./user-manager"
 
 export function handleInvestmentRouted(event: InvestmentRoutedEvent): void {
   let user = getOrCreateUser(event.params.investor, event.block.timestamp)
+  
+  // Create or update aggregated investment for this user+offering combination
+  let aggregatedId = event.params.investor.toHexString() + "-" + event.params.offeringAddress.toHexString()
+  let aggregatedInvestment = UserOfferingInvestment.load(Bytes.fromUTF8(aggregatedId))
+  
+  if (!aggregatedInvestment) {
+    aggregatedInvestment = new UserOfferingInvestment(Bytes.fromUTF8(aggregatedId))
+    aggregatedInvestment.user = event.params.investor
+    aggregatedInvestment.userAddress = event.params.investor
+    aggregatedInvestment.offering = event.params.offeringAddress
+    aggregatedInvestment.offeringAddress = event.params.offeringAddress
+    aggregatedInvestment.totalInvestments = BigInt.fromI32(0)
+    aggregatedInvestment.totalPaidAmount = BigInt.fromI32(0)
+    aggregatedInvestment.totalUSDValue = BigInt.fromI32(0)
+    aggregatedInvestment.totalTokensReceived = BigInt.fromI32(0)
+    aggregatedInvestment.totalWrappedTokensReceived = BigInt.fromI32(0)
+    aggregatedInvestment.totalETHInvested = BigInt.fromI32(0)
+    aggregatedInvestment.totalERC20Invested = BigInt.fromI32(0)
+    aggregatedInvestment.totalKYBValidatedInvestments = BigInt.fromI32(0)
+    aggregatedInvestment.hasClaimedTokens = false
+    aggregatedInvestment.totalTokensClaimed = BigInt.fromI32(0)
+    aggregatedInvestment.hasReceivedRefund = false
+    aggregatedInvestment.totalRefundReceived = BigInt.fromI32(0)
+    aggregatedInvestment.firstInvestmentAt = event.block.timestamp
+  }
+  
+  // Update aggregated investment
+  aggregatedInvestment.totalInvestments = aggregatedInvestment.totalInvestments.plus(BigInt.fromI32(1))
+  aggregatedInvestment.totalPaidAmount = aggregatedInvestment.totalPaidAmount.plus(event.params.paidAmount)
+  aggregatedInvestment.totalUSDValue = aggregatedInvestment.totalUSDValue.plus(event.params.paidAmount) // Assuming 1:1 for now
+  aggregatedInvestment.totalTokensReceived = aggregatedInvestment.totalTokensReceived.plus(event.params.tokensReceived)
+  
+  // Track payment method
+  if (event.params.paymentToken.equals(Address.zero())) {
+    aggregatedInvestment.totalETHInvested = aggregatedInvestment.totalETHInvested.plus(event.params.paidAmount)
+  } else {
+    aggregatedInvestment.totalERC20Invested = aggregatedInvestment.totalERC20Invested.plus(event.params.paidAmount)
+  }
+  
+  aggregatedInvestment.lastInvestmentAt = event.block.timestamp
+  aggregatedInvestment.save()
   
   // Create user investment record
   let investmentId = event.transaction.hash.concatI32(event.logIndex.toI32())
@@ -43,6 +85,9 @@ export function handleInvestmentRouted(event: InvestmentRoutedEvent): void {
   // Calculate USD value (assuming 1:1 for simplicity, could be enhanced with oracle data)
   userInvestment.usdValue = event.params.paidAmount
   
+  // Link to aggregated investment
+  userInvestment.aggregatedInvestment = aggregatedInvestment.id
+  
   userInvestment.save()
   
   // Update user activity
@@ -64,6 +109,15 @@ export function handleKYBValidatedInvestment(event: KYBValidatedInvestmentEvent)
   // Handle KYB validated investment
   let user = getOrCreateUser(event.params.investor, event.block.timestamp)
   
+  // Update aggregated investment for KYB validation
+  let aggregatedId = event.params.investor.toHexString() + "-" + event.params.offeringAddress.toHexString()
+  let aggregatedInvestment = UserOfferingInvestment.load(Bytes.fromUTF8(aggregatedId))
+  
+  if (aggregatedInvestment) {
+    aggregatedInvestment.totalKYBValidatedInvestments = aggregatedInvestment.totalKYBValidatedInvestments.plus(BigInt.fromI32(1))
+    aggregatedInvestment.save()
+  }
+  
   // Update user activity for KYB investment
   updateUserActivity(
     event.params.investor,
@@ -80,6 +134,16 @@ export function handleKYBValidatedInvestment(event: KYBValidatedInvestmentEvent)
 
 export function handleTokensClaimed(event: TokensClaimedEvent): void {
   let user = getOrCreateUser(event.params.investor, event.block.timestamp)
+  
+  // Update aggregated investment for token claims
+  let aggregatedId = event.params.investor.toHexString() + "-" + event.params.offeringAddress.toHexString()
+  let aggregatedInvestment = UserOfferingInvestment.load(Bytes.fromUTF8(aggregatedId))
+  
+  if (aggregatedInvestment) {
+    aggregatedInvestment.hasClaimedTokens = true
+    aggregatedInvestment.totalTokensClaimed = aggregatedInvestment.totalTokensClaimed.plus(event.params.amount)
+    aggregatedInvestment.save()
+  }
   
   // Create user claim record
   let claimId = event.transaction.hash.concatI32(event.logIndex.toI32())
