@@ -700,31 +700,3 @@ type UserActivityHistory @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-}
-
-# ============================================
-# UPCOMING PAYOUT PREDICTIONS
-# ============================================
-
-type UserUpcomingPayout @entity {
-  id: Bytes! # userAddress-wrappedTokenAddress-nextPeriod
-  user: User!
-  userAddress: Bytes!
-  wrappedToken: WrappedToken!
-  wrappedTokenAddress: Bytes!
-  
-  # Prediction Details
-  expectedPeriod: BigInt!
-  expectedAmount: BigInt!
-  expectedDate: BigInt!
-  userBalance: BigInt!
-  sharePercentage: BigInt!
-  
-  # Status
-  isAvailable: Boolean!
-  hasBeenClaimed: Boolean!
-  
-  # Timestamps
-  calculatedAt: BigInt!
-  lastUpdated: BigInt!
-}
