@@ -120,6 +120,16 @@ export function handleTokensClaimed(event: TokensClaimedEvent): void {
 export function handleRefundClaimed(event: RefundClaimedEvent): void {
   let user = getOrCreateUser(event.params.investor, event.block.timestamp)
   
+  // Update aggregated investment for refunds
+  let aggregatedId = event.params.investor.toHexString() + "-" + event.params.offeringAddress.toHexString()
+  let aggregatedInvestment = UserOfferingInvestment.load(Bytes.fromUTF8(aggregatedId))
+  
+  if (aggregatedInvestment) {
+    aggregatedInvestment.hasReceivedRefund = true
+    aggregatedInvestment.totalRefundReceived = aggregatedInvestment.totalRefundReceived.plus(event.params.amount)
+    aggregatedInvestment.save()
+  }
+  
   // Create user refund record
   let refundId = event.transaction.hash.concatI32(event.logIndex.toI32())
   let userClaim = new UserClaim(refundId)

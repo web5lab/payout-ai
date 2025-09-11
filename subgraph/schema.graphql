@@ -33,6 +33,7 @@ type User @entity {
   
   # Derived relationships
   investments: [UserInvestment!]! @derivedFrom(field: "user")
+  aggregatedInvestments: [UserOfferingInvestment!]! @derivedFrom(field: "user")
   claims: [UserClaim!]! @derivedFrom(field: "user")
   payouts: [UserPayout!]! @derivedFrom(field: "user")
   wrappedTokenHoldings: [UserWrappedTokenHolding!]! @derivedFrom(field: "user")
@@ -69,6 +70,9 @@ type UserInvestment @entity {
   transactionHash: Bytes!
   gasUsed: BigInt!
   gasPrice: BigInt!
+  
+  # Link to aggregated investment
+  aggregatedInvestment: UserOfferingInvestment!
 }
 
 type UserClaim @entity {

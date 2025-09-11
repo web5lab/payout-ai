@@ -103,6 +103,50 @@ query GetUserProfile($userAddress: Bytes!) {
   }
 }
 
+# Get user's aggregated investments per offering
+query GetUserAggregatedInvestments($userAddress: Bytes!) {
+  user(id: $userAddress) {
+    aggregatedInvestments(orderBy: totalPaidAmount, orderDirection: desc) {
+      id
+      offering {
+        id
+        saleTokenSymbol
+        tokenPrice
+        apyEnabled
+        isActive
+        isFinalized
+        wrappedTokenAddress
+      }
+      totalInvestments
+      totalPaidAmount
+      totalUSDValue
+      totalTokensReceived
+      totalWrappedTokensReceived
+      totalETHInvested
+      totalERC20Invested
+      totalKYBValidatedInvestments
+      hasClaimedTokens
+      totalTokensClaimed
+      hasReceivedRefund
+      totalRefundReceived
+      firstInvestmentAt
+      lastInvestmentAt
+      
+      # Individual investments for this offering
+      individualInvestments(orderBy: blockTimestamp, orderDirection: desc) {
+        id
+        paymentToken
+        paymentTokenSymbol
+        paidAmount
+        tokensReceived
+        isKYBValidated
+        blockTimestamp
+        transactionHash
+      }
+    }
+  }
+}
+
 # Get user's investment history with detailed breakdown
 query GetUserInvestmentHistory($userAddress: Bytes!, $first: Int = 20, $skip: Int = 0) {
   user(id: $userAddress) {
