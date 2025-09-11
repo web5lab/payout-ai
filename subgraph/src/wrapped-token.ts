@@ -66,13 +66,13 @@ export function handleInvestmentRegistered(event: InvestmentRegisteredEvent): vo
   // Update holding with new investment
   holding.currentBalance = holding.currentBalance.plus(event.params.tokenAmount)
   holding.originalInvestment = holding.originalInvestment.plus(event.params.tokenAmount)
-  holding.usdValueInvested = holding.usdValueInvested.plus(event.params.usdValue)
+  holding.usdValueInvested = holding.usdValueInvested.plus(event.params.usdtValue)
   holding.lastActivityAt = event.block.timestamp
   holding.save()
   
   // Update wrapped token stats
   wrappedToken.totalSupply = wrappedToken.totalSupply.plus(event.params.tokenAmount)
-  wrappedToken.totalUSDTInvested = wrappedToken.totalUSDTInvested.plus(event.params.usdValue)
+  wrappedToken.totalUSDTInvested = wrappedToken.totalUSDTInvested.plus(event.params.usdtValue)
   wrappedToken.save()
   
   // Update user activity
@@ -166,7 +166,7 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   userPayout.amount = event.params.amount
   userPayout.payoutToken = wrappedToken.payoutToken
   userPayout.payoutTokenSymbol = wrappedToken.payoutTokenSymbol || ""
-  userPayout.payoutPeriod = event.params.period
+  userPayout.payoutPeriodNumber = event.params.period
   userPayout.isPartialClaim = false // Assuming full claim for now
   userPayout.remainingClaimable = BigInt.fromI32(0)
   userPayout.blockNumber = event.block.number
@@ -178,12 +178,6 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   let payoutDistribution = PayoutDistribution.load(Bytes.fromUTF8(distributionId))
   if (payoutDistribution) {
     userPayout.payoutDistribution = payoutDistribution.id
-  }
-  
-  let periodId = event.address.toHexString() + "-" + event.params.period.toString()
-  let payoutPeriod = PayoutPeriod.load(Bytes.fromUTF8(periodId))
-  if (payoutPeriod) {
-    userPayout.payoutPeriod = payoutPeriod.id
   }
   
   // Get user's wrapped token balance for share calculation
