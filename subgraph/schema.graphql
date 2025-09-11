@@ -508,6 +508,38 @@ type WrappedTokenDeployment @entity(immutable: true) {
 }
 
 # ============================================
+# DEPLOYMENT TRACKING
+# ============================================
+
+type OfferingDeployment @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  offeringId: BigInt!
+  creator: User!
+  creatorAddress: Bytes!
+  offeringAddress: Bytes!
+  tokenOwner: Bytes!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type WrappedTokenDeployment @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  tokenId: BigInt!
+  creator: User!
+  creatorAddress: Bytes!
+  wrappedTokenAddress: Bytes!
+  offeringContract: Bytes!
+  
+  # Transaction Info
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
 # ANALYTICS ENTITIES
 # ============================================
 

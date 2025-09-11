@@ -1,7 +1,7 @@
 import {
   OfferingDeployed as OfferingDeployedEvent
 } from "../generated/OfferingFactory/OfferingFactory"
-import { User, Offering } from "../generated/schema"
+import { User, Offering, OfferingDeployment } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"
 

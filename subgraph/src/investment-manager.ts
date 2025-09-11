@@ -9,8 +9,7 @@ import {
   UserClaim, 
   UserRefund,
   UserKYBValidation,
-  InvestmentEvent,
-  RefundEvent
+  InvestmentEvent
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { getOrCreateUser, updateUserActivity } from "./user-manager"

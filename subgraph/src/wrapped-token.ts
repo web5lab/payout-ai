@@ -15,9 +15,7 @@ import {
   UserEmergencyUnlock,
   UserClaim,
   PayoutDistribution,
-  PayoutPeriod,
-  PayoutEvent,
-  EmergencyEvent
+  PayoutPeriod
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { 
@@ -166,19 +164,6 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   wrappedToken.currentPayoutFunds = wrappedToken.currentPayoutFunds.plus(event.params.amount)
   wrappedToken.save()
 
-  // Create payout event
-  let payoutEvent = new PayoutEvent(distributionId)
-  payoutEvent.eventType = "distributed"
-  payoutEvent.wrappedToken = event.address
-  payoutEvent.amount = event.params.amount
-  payoutEvent.period = event.params.period
-  payoutEvent.totalUSDTAtDistribution = event.params.totalUSDTAtDistribution
-  payoutEvent.eligibleHolders = wrappedToken.activeHolders
-  payoutEvent.blockNumber = event.block.number
-  payoutEvent.blockTimestamp = event.block.timestamp
-  payoutEvent.transactionHash = event.transaction.hash
-  payoutEvent.save()
-
   // Create upcoming payout records for all holders
   createUpcomingPayoutsForHolders(event.address, event.params.period, event.params.amount, event.block.timestamp)
   
@@ -267,21 +252,6 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   wrappedToken.totalPayoutsClaimed = wrappedToken.totalPayoutsClaimed.plus(event.params.amount)
   wrappedToken.currentPayoutFunds = wrappedToken.currentPayoutFunds.minus(event.params.amount)
   wrappedToken.save()
-
-  // Create payout event
-  let payoutEventId = event.transaction.hash.concatI32(event.logIndex.toI32() + 1000)
-  let payoutEvent = new PayoutEvent(payoutEventId)
-  payoutEvent.eventType = "claimed"
-  payoutEvent.wrappedToken = event.address
-  payoutEvent.user = event.params.user
-  payoutEvent.amount = event.params.amount
-  payoutEvent.period = event.params.period
-  payoutEvent.userBalance = userPayout.userWrappedBalance
-  payoutEvent.sharePercentage = userPayout.sharePercentage
-  payoutEvent.blockNumber = event.block.number
-  payoutEvent.blockTimestamp = event.block.timestamp
-  payoutEvent.transactionHash = event.transaction.hash
-  payoutEvent.save()
 
   // Update user activity
   updateUserActivity(
@@ -395,19 +365,6 @@ export function handleEmergencyUnlockEnabled(event: EmergencyUnlockEnabledEvent)
   wrappedToken.emergencyUnlockPenalty = event.params.penalty
   wrappedToken.save()
 
-  // Create emergency event
-  let emergencyId = event.transaction.hash.concatI32(event.logIndex.toI32())
-  let emergencyEvent = new EmergencyEvent(emergencyId)
-  emergencyEvent.eventType = "enabled"
-  emergencyEvent.wrappedToken = event.address
-  emergencyEvent.penaltyPercentage = event.params.penalty
-  emergencyEvent.amount = BigInt.fromI32(0)
-  emergencyEvent.penalty = BigInt.fromI32(0)
-  emergencyEvent.blockNumber = event.block.number
-  emergencyEvent.blockTimestamp = event.block.timestamp
-  emergencyEvent.transactionHash = event.transaction.hash
-  emergencyEvent.save()
-
   // Notify all holders about emergency unlock availability
   notifyHoldersAboutEmergencyUnlock(event.address, event.params.penalty, event.block.timestamp)
 }
@@ -484,20 +441,6 @@ export function handleEmergencyUnlockUsed(event: EmergencyUnlockUsedEvent): void
   wrappedToken.activeHolders = wrappedToken.activeHolders.minus(BigInt.fromI32(1))
   wrappedToken.totalSupply = wrappedToken.totalSupply.minus(emergencyUnlock.originalAmount)
   wrappedToken.save()
-
-  // Create emergency event
-  let emergencyEventId = event.transaction.hash.concatI32(event.logIndex.toI32() + 3000)
-  let emergencyEvent = new EmergencyEvent(emergencyEventId)
-  emergencyEvent.eventType = "used"
-  emergencyEvent.wrappedToken = event.address
-  emergencyEvent.user = event.params.user
-  emergencyEvent.amount = event.params.amount
-  emergencyEvent.penalty = event.params.penalty
-  emergencyEvent.penaltyPercentage = emergencyUnlock.penaltyPercentage
-  emergencyEvent.blockNumber = event.block.number
-  emergencyEvent.blockTimestamp = event.block.timestamp
-  emergencyEvent.transactionHash = event.transaction.hash
-  emergencyEvent.save()
 
   // Update user activity
   updateUserActivity(
