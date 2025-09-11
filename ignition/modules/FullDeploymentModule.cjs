@@ -58,7 +58,7 @@ module.exports = buildModule("FullDeploymentModule", (m) => {
     maxInvestment: ethers.parseUnits("10000", 18),
     startDate: now + 2 * oneDay, // Starts in two days to ensure it's strictly in the future
     endDate: now + 30 * oneDay, // Ends in 30 days
-    apyEnabled: flase,
+    apyEnabled: false,
     softCap: ethers.parseUnits("100000", 18),
     fundraisingCap: ethers.parseUnits("1000000", 18),
     tokenPrice: ethers.parseUnits("1", 18), // 1 SaleToken = 1 USD
