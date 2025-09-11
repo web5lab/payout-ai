@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Offering & Wrapped Token Payout Flow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            font-size: 3rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 3rem;
+            font-weight: 800;
+        }
+        .phase-header {
+            font-size: 1.8rem;
+            color: #2c3e50;
+            text-align: center;
+            margin: 3rem 0 2rem 0;
+            font-weight: 700;
+            padding: 1rem;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+        .flowchart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            padding: 2rem 0;
+        }
+        .flow-node {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            min-width: 350px;
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .flow-node::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        .flow-node:hover::before {
+            left: 100%;
+        }
+        .flow-node.deployment {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            box-shadow: 0 10px 20px rgba(17, 153, 142, 0.3);
+        }
+        .flow-node.investment {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .flow-node.payout {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            box-shadow: 0 10px 20px rgba(240, 147, 251, 0.3);
+        }
+        .flow-node.decision {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            color: #8b4513;
+            border: 3px solid #ff6b35;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 20px rgba(255, 107, 53, 0.3);
+        }
+        .flow-node.emergency {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #8b0000;
+            border: 3px solid #ff4757;
+            box-shadow: 0 10px 20px rgba(255, 71, 87, 0.3);
+        }
+        .flow-node:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
+        }
+        .arrow {
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 20px solid #667eea;
+            margin: 1rem 0;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+        }
+        .arrow.payout-arrow {
+            border-top-color: #f093fb;
+        }
+        .arrow.emergency-arrow {
+            border-top-color: #ff4757;
+        }
+        .label {
+            font-size: 0.95rem;
+            margin-top: 0.8rem;
+            font-weight: 400;
+            opacity: 0.9;
+            line-height: 1.4;
+        }
+        .decision-paths {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 1000px;
+            margin: 2rem 0;
+            gap: 3rem;
+        }
+        .decision-path {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            flex: 1;
+        }
+        .path-label {
+            font-weight: 700;
+            color: #2c3e50;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border: 2px solid #667eea;
+        }
+        .path-label.yes {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border-color: #11998e;
+        }
+        .path-label.no {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #8b0000;
+            border-color: #ff4757;
+        }
+        .contract-box {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #2c3e50;
+            border-radius: 12px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.9rem;
+            border: 2px solid #667eea;
+        }
+        .parallel-flows {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 1200px;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        .parallel-flow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            flex: 1;
+        }
+        .flow-connector {
+            width: 100px;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            margin: 1rem 0;
+            border-radius: 2px;
+        }
+        .highlight-box {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+            color: #2d3436;
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin: 1rem 0;
+            border: 3px solid #fdcb6e;
+            box-shadow: 0 8px 16px rgba(253, 203, 110, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Complete Offering & Wrapped Token Payout Flow</h1>
+        
+        <div class="highlight-box">
+            <h3 style="margin: 0 0 1rem 0; font-weight: 700;">📋 System Overview</h3>
+            <p><strong>Deployment:</strong> WrappedTokenFactory → OfferingFactory → Offering + WrappedToken</p>
+            <p><strong>Investment:</strong> User → InvestmentManager → Offering → Escrow + WrappedToken</p>
+            <p><strong>Payout:</strong> Admin → WrappedToken → Proportional Distribution → User Claims</p>
+        </div>
+
+        <!-- PHASE 1: DEPLOYMENT -->
+        <div class="phase-header">🏗️ PHASE 1: CONTRACT DEPLOYMENT</div>
+        <div class="flowchart-container">
+            <div class="flow-node deployment">
+                <strong>1. Deploy WrappedTokenFactory</strong>
+                <div class="contract-box">WrappedTokenFactory.sol</div>
+                <div class="label">Factory for creating wrapped tokens with payout functionality</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node deployment">
+                <strong>2. Deploy OfferingFactory</strong>
+                <div class="contract-box">OfferingFactory.sol</div>
+                <div class="label">References WrappedTokenFactory via interface for token creation</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node deployment">
+                <strong>3. Deploy Supporting Contracts</strong>
+                <div class="contract-box">InvestmentManager.sol + Escrow.sol</div>
+                <div class="label">Investment routing and fund security infrastructure</div>
+            </div>
+        </div>
+
+        <!-- PHASE 2: OFFERING CREATION -->
+        <div class="phase-header">🎯 PHASE 2: OFFERING CREATION</div>
+        <div class="flowchart-container">
+            <div class="flow-node investment">
+                <strong>4. Create Offering with APY Enabled</strong>
+                <div class="contract-box">offeringFactory.createOfferingWithPaymentTokens()</div>
+                <div class="label">Project owner creates offering with APY enabled for wrapped token payouts</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="parallel-flows">
+                <div class="parallel-flow">
+                    <div class="flow-node deployment">
+                        <strong>5a. Deploy Offering Contract</strong>
+                        <div class="contract-box">Offering.sol</div>
+                        <div class="label">Handles investments and token distribution</div>
+                    </div>
+                </div>
+                <div class="parallel-flow">
+                    <div class="flow-node deployment">
+                        <strong>5b. Deploy WrappedToken Contract</strong>
+                        <div class="contract-box">WRAPEDTOKEN.sol</div>
+                        <div class="label">Created via WrappedTokenFactory for APY payouts</div>
+                    </div>
+                </div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node investment">
+                <strong>6. Configure Payment Tokens & Oracles</strong>
+                <div class="contract-box">setWhitelistedPaymentToken() + setTokenOracle()</div>
+                <div class="label">Setup accepted payment methods (PAY, USDT, ETH) with price oracles</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node payout">
+                <strong>7. Grant Payout Admin Role</strong>
+                <div class="contract-box">wrappedToken.grantRole(PAYOUT_ADMIN_ROLE, admin)</div>
+                <div class="label">Enable admin to manage payout fund distributions</div>
+            </div>
+        </div>
+
+        <!-- PHASE 3: INVESTMENT FLOW -->
+        <div class="phase-header">💰 PHASE 3: INVESTMENT FLOW</div>
+        <div class="flowchart-container">
+            <div class="flow-node investment">
+                <strong>8. User Initiates Investment</strong>
+                <div class="contract-box">investmentManager.routeInvestment()</div>
+                <div class="label">User invests via InvestmentManager with PAY/USDT/ETH tokens</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="flow-node investment">
+                <strong>9. Investment Processing</strong>
+                <div class="contract-box">offering.invest() → USD value calculation</div>
+                <div class="label">Offering calculates USD value using oracles and validates limits</div>
+            </div>
+            <div class="arrow"></div>
+
+            <div class="parallel-flows">
+                <div class="parallel-flow">
+                    <div class="flow-node investment">
+                        <strong>10a. Funds to Escrow</strong>
+                        <div class="contract-box">escrow.depositToken() / depositNative()</div>
+                        <div class="label">Payment tokens secured in escrow contract</div>
+                    </div>
+                </div>
+                <div class="parallel-flow">
+                    <div class="flow-node payout">
+                        <strong>10b. Register in WrappedToken</strong>
+                        <div class="contract-box">wrappedToken.registerInvestment()</div>
+                        <div class="label">Mint wrapped tokens, lock original tokens</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PHASE 4: PAYOUT SYSTEM -->
+        <div class="phase-header">🎁 PHASE 4: PAYOUT DISTRIBUTION SYSTEM</div>
+        <div class="flowchart-container">
+            <div class="flow-node payout">
+                <strong>11. Admin Adds Payout Funds</strong>
+                <div class="contract-box">wrappedToken.addPayoutFunds(amount)</div>
+                <div class="label">Payout admin deposits reward tokens for distribution to all wrapped token holders</div>
+            </div>
+            <div class="arrow payout-arrow"></div>
+
+            <div class="flow-node payout">
+                <strong>12. Calculate Proportional Shares</strong>
+                <div class="contract-box">userShare = (totalPayoutFunds × userBalance) ÷ totalSupply</div>
+                <div class="label">System calculates each user's proportional share based on wrapped token balance</div>
+            </div>
+            <div class="arrow payout-arrow"></div>
+
+            <div class="flow-node payout">
+                <strong>13. User Claims Payout</strong>
+                <div class="contract-box">wrappedToken.claimTotalPayout()</div>
+                <div class="label">User claims their proportional share of payout funds</div>
+            </div>
+            <div class="arrow payout-arrow"></div>
+
+            <div class="flow-node decision">
+                <strong>Multiple Payout Rounds?</strong>
+                <div class="label">Admin can add multiple payout rounds over time</div>
+            </div>
+
+            <div class="decision-paths">
+                <div class="decision-path">
+                    <div class="path-label yes">YES - More Payouts</div>
+                    <div class="arrow payout-arrow"></div>
+                    <div class="flow-node payout">
+                        <strong>14a. Additional Payout Rounds</strong>
+                        <div class="contract-box">Cumulative payout tracking</div>
+                        <div class="label">Users can claim multiple rounds, system tracks cumulative payouts</div>
+                    </div>
+                </div>
+                <div class="decision-path">
+                    <div class="path-label no">NO - Continue to Maturity</div>
+                    <div class="arrow payout-arrow"></div>
+                    <div class="flow-node payout">
+                        <strong>14b. Wait for Maturity</strong>
+                        <div class="contract-box">Hold until maturityDate</div>
+                        <div class="label">User continues earning until token maturity date</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PHASE 5: EMERGENCY UNLOCK -->
+        <div class="phase-header">🚨 PHASE 5: EMERGENCY UNLOCK (OPTIONAL)</div>
+        <div class="flowchart-container">
+            <div class="flow-node emergency">
+                <strong>15. Admin Enables Emergency Unlock</strong>
+                <div class="contract-box">wrappedToken.enableEmergencyUnlock(penaltyPercentage)</div>
+                <div class="label">Admin can enable early exit feature with configurable penalty (max 50%)</div>
+            </div>
+            <div class="arrow emergency-arrow"></div>
+
+            <div class="flow-node decision">
+                <strong>User Wants Early Exit?</strong>
+                <div class="label">User can choose to exit before maturity with penalty</div>
+            </div>
+
+            <div class="decision-paths">
+                <div class="decision-path">
+                    <div class="path-label no">NO - Wait for Maturity</div>
+                    <div class="arrow"></div>
+                    <div class="flow-node payout">
+                        <strong>Continue Normal Flow</strong>
+                        <div class="label">User continues with normal payout cycle</div>
+                    </div>
+                </div>
+                <div class="decision-path">
+                    <div class="path-label yes">YES - Emergency Exit</div>
+                    <div class="arrow emergency-arrow"></div>
+                    <div class="flow-node emergency">
+                        <strong>16. Emergency Unlock</strong>
+                        <div class="contract-box">wrappedToken.emergencyUnlock()</div>
+                        <div class="label">Burn wrapped tokens, return original tokens minus penalty</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PHASE 6: MATURITY -->
+        <div class="phase-header">🏁 PHASE 6: MATURITY & FINAL CLAIMS</div>
+        <div class="flowchart-container">
+            <div class="flow-node payout">
+                <strong>17. Maturity Date Reached</strong>
+                <div class="contract-box">block.timestamp >= maturityDate</div>
+                <div class="label">Wrapped token contract reaches maturity date</div>
+            </div>
+            <div class="arrow payout-arrow"></div>
+
+            <div class="flow-node payout">
+                <strong>18. User Claims Final Tokens</strong>
+                <div class="contract-box">wrappedToken.claimFinalTokens()</div>
+                <div class="label">Burn wrapped tokens and receive original deposited tokens</div>
+            </div>
+            <div class="arrow payout-arrow"></div>
+
+            <div class="flow-node deployment">
+                <strong>🎉 COMPLETE: Investment Cycle Finished</strong>
+                <div class="label">User has received all payouts + original investment tokens</div>
+            </div>
+        </div>
+
+        <!-- TECHNICAL DETAILS -->
+        <div class="phase-header">⚙️ TECHNICAL IMPLEMENTATION DETAILS</div>
+        <div class="flowchart-container">
+            <div class="highlight-box">
+                <h3 style="margin: 0 0 1rem 0; font-weight: 700;">🔧 Key Contract Functions</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1rem;">
+                    <div>
+                        <h4 style="color: #667eea; margin-bottom: 0.5rem;">📦 Deployment Functions:</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>wrappedTokenFactory.createWrappedToken()</code></li>
+                            <li><code>offeringFactory.createOfferingWithPaymentTokens()</code></li>
+                            <li><code>offering.initialize()</code></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #f093fb; margin-bottom: 0.5rem;">💰 Investment Functions:</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>investmentManager.routeInvestment()</code></li>
+                            <li><code>offering.invest()</code></li>
+                            <li><code>wrappedToken.registerInvestment()</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem;">
+                    <div>
+                        <h4 style="color: #00b894; margin-bottom: 0.5rem;">🎁 Payout Functions:</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>wrappedToken.addPayoutFunds()</code></li>
+                            <li><code>wrappedToken.getUserPayoutBalance()</code></li>
+                            <li><code>wrappedToken.claimTotalPayout()</code></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: #ff4757; margin-bottom: 0.5rem;">🚨 Emergency Functions:</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>wrappedToken.enableEmergencyUnlock()</code></li>
+                            <li><code>wrappedToken.emergencyUnlock()</code></li>
+                            <li><code>wrappedToken.claimFinalTokens()</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h3 style="margin: 0 0 1rem 0; font-weight: 700;">📊 Payout Distribution Logic</h3>
+                <div style="background: #2d3436; color: #ddd; padding: 1rem; border-radius: 8px; font-family: monospace;">
+                    <div><strong>Proportional Share Calculation:</strong></div>
+                    <div style="margin: 0.5rem 0;">userShare = (totalPayoutFunds × userWrappedBalance) ÷ totalWrappedSupply</div>
+                    <div style="margin: 0.5rem 0;">claimableAmount = userShare - alreadyClaimedAmount</div>
+                    <div><strong>Dynamic Rebalancing:</strong> When tokens are burned (emergency unlock), remaining users get larger shares</div>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h3 style="margin: 0 0 1rem 0; font-weight: 700;">🔄 Multiple Scenarios Supported</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(102, 126, 234, 0.1); padding: 1rem; border-radius: 8px;">
+                        <strong>🎯 APY Enabled</strong>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">Wrapped tokens + payout system</p>
+                    </div>
+                    <div style="background: rgba(240, 147, 251, 0.1); padding: 1rem; border-radius: 8px;">
+                        <strong>🚨 Emergency Unlock</strong>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">Early exit with penalty</p>
+                    </div>
+                    <div style="background: rgba(17, 153, 142, 0.1); padding: 1rem; border-radius: 8px;">
+                        <strong>🔄 Refund System</strong>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">Escrow-based refunds</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h3 style="margin: 0 0 1rem 0; font-weight: 700;">🧪 Testing Scripts Available</h3>
+                <div style="background: #2d3436; color: #ddd; padding: 1rem; border-radius: 8px; font-family: monospace;">
+                    <div><strong># General offering simulation</strong></div>
+                    <div style="color: #00b894;">npx hardhat run scripts/simulation.js --network localhost</div>
+                    <div style="margin-top: 0.5rem;"><strong># Dedicated payout flow simulation</strong></div>
+                    <div style="color: #00b894;">npx hardhat run scripts/payout-flow-simulation.js --network localhost</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "FullDeploymentModule#DirectOffering": "0xF1C667974BB498f84cf0fF410eD95956971c2db1",
+  "FullDeploymentModule#Escrow": "0xB0b2c0882795619b0FBcE93b6260775c02E182bd",
+  "FullDeploymentModule#InvestmentManager": "0xf25157b5657C654E6eD45A848435dB29Db8Bf7D0",
+  "FullDeploymentModule#MockERC20_PaymentToken": "0xEF189899bf065e5E3b2B89F8711258fB00587d42",
+  "FullDeploymentModule#MockERC20_PayoutToken": "0xDe7B62E65d52833b3B389AAd935E5718484731c0",
+  "FullDeploymentModule#MockERC20_SaleToken": "0xf7b32526124171384B3ba8307727fB6ACfA61b2e",
+  "FullDeploymentModule#MockERC20_USDT": "0x4EB5af7CF2dB1e39D444a8c0EF05D6AFF44a306c",
+  "FullDeploymentModule#MockV3Aggregator_EthOracle": "0xfd8Ec63B4A2eC68809a06b7BBE187dc0bdf8d9E4",
+  "FullDeploymentModule#MockV3Aggregator_PaymentOracle": "0xD5bE5a4b024a80e05Ccac5aa3526Be430b37b4bE",
+  "FullDeploymentModule#MockV3Aggregator_UsdtOracle": "0x68C1801e6B213C752CFd6C521de7eeC05987E997",
+  "FullDeploymentModule#WrappedTokenFactory": "0x5b857c5cAc158D135f8C94de6B546aaF91552995",
+  "FullDeploymentModule#DirectWrappedToken": "0xD9D45160F908f7ae4E1fB7dbEE2aFb266B14f0a9",
+  "FullDeploymentModule#OfferingFactory": "0x6866b02f7a78270C6BF8525AA42f7ABEd54449FF"
+}
