@@ -1,6 +1,6 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
-const { time, loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("Complete Offering Flow Tests", function () {
     // Constants for test configuration
@@ -384,7 +384,7 @@ describe("Complete Offering Flow Tests", function () {
         }
 
         it("Should mint wrapped tokens on investment", async function () {
-            const { offering, wrappedToken, config, investmentManager, investor1, paymentToken } = await setupOfferingWithAPY();
+            const { offering, wrappedToken, config, investmentManager, investor1, paymentToken, escrow, treasuryOwner } = await setupOfferingWithAPY();
             
             const investmentAmount = ethers.parseUnits("400"); // $400
             await paymentToken.connect(investor1).approve(await offering.getAddress(), investmentAmount);
@@ -396,6 +396,13 @@ describe("Complete Offering Flow Tests", function () {
                 await paymentToken.getAddress(),
                 investmentAmount
             );
+
+            // Finalize offering first to trigger token claiming
+            await time.increaseTo(config.endDate + 10);
+            await escrow.connect(treasuryOwner).finalizeOffering(await offering.getAddress());
+
+            // Now claim tokens which should register investment in wrapped token
+            await investmentManager.connect(investor1).claimInvestmentTokens(await offering.getAddress());
 
             // Check wrapped tokens were minted
             const wrappedBalance = await wrappedToken.balanceOf(investor1.address);
@@ -421,13 +428,14 @@ describe("Complete Offering Flow Tests", function () {
                 investmentAmount
             );
 
-            // Finalize offering to set first payout date
+            // Finalize offering to set first payout date and claim tokens
             await time.increaseTo(config.endDate + 10);
             await escrow.connect(treasuryOwner).finalizeOffering(await offering.getAddress());
+            await investmentManager.connect(investor1).claimInvestmentTokens(await offering.getAddress());
 
             // Fast forward to first payout date
             const firstPayoutDate = await wrappedToken.firstPayoutDate();
-            await time.increaseTo(firstPayoutDate + 10);
+            await time.increaseTo(Number(firstPayoutDate) + 10);
 
             // Admin distributes payout
             const payoutAmount = ethers.parseUnits("100");
@@ -455,9 +463,10 @@ describe("Complete Offering Flow Tests", function () {
                 investmentAmount
             );
 
-            // Finalize offering
+            // Finalize offering and claim tokens
             await time.increaseTo(config.endDate + 10);
             await escrow.connect(treasuryOwner).finalizeOffering(await offering.getAddress());
+            await investmentManager.connect(investor1).claimInvestmentTokens(await offering.getAddress());
 
             // Fast forward to maturity
             await time.increaseTo(config.maturityDate + 10);
@@ -589,9 +598,10 @@ describe("Complete Offering Flow Tests", function () {
                 investmentAmount
             );
 
-            // Finalize offering
+            // Finalize offering and claim tokens
             await time.increaseTo(config.endDate + 10);
             await escrow.connect(treasuryOwner).finalizeOffering(await offering.getAddress());
+            await investmentManager.connect(investor1).claimInvestmentTokens(await offering.getAddress());
 
             // Enable emergency unlock with 10% penalty
             await wrappedToken.connect(deployer).enableEmergencyUnlock(1000);
@@ -602,7 +612,7 @@ describe("Complete Offering Flow Tests", function () {
             const finalSaleBalance = await saleToken.balanceOf(investor1.address);
             
             const tokensReceived = finalSaleBalance - initialSaleBalance;
-            const expectedTokens = ethers.parseUnits("1600") * 90n / 100n; // 90% after 10% penalty
+            const expectedTokens = (ethers.parseUnits("1600") * 90n) / 100n; // 90% after 10% penalty
             expect(tokensReceived).to.equal(expectedTokens);
         });
 
@@ -696,6 +706,7 @@ describe("Complete Offering Flow Tests", function () {
             // Create offering with lower cap for testing
             const config = await createOfferingConfig(fixture, false);
             config.fundraisingCap = ethers.parseUnits("1000"); // $1000 cap
+            config.softCap = ethers.parseUnits("500"); // $500 soft cap (must be <= fundraising cap)
             
             const tx = await offeringFactory.connect(deployer).createOfferingWithPaymentTokens(
                 config,
@@ -836,6 +847,128 @@ describe("Complete Offering Flow Tests", function () {
             expect(allOfferings[0]).to.not.equal(ethers.ZeroAddress);
             expect(allOfferings[1]).to.not.equal(ethers.ZeroAddress);
             expect(allOfferings[2]).to.not.equal(ethers.ZeroAddress);
+        });
+    });
+
+    describe("10. Complete End-to-End Flow", function () {
+        it("Should handle complete offering lifecycle without APY", async function () {
+            const fixture = await loadFixture(deployCompleteEcosystemFixture);
+            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, investmentManager, investor1, investor2, escrow, treasuryOwner } = fixture;
+            
+            // 1. Create offering
+            const config = await createOfferingConfig(fixture, false);
+            const tx = await offeringFactory.connect(deployer).createOfferingWithPaymentTokens(
+                config,
+                [await paymentToken.getAddress()],
+                [await paymentOracle.getAddress()]
+            );
+
+            const receipt = await tx.wait();
+            const event = receipt.logs.find(log => 
+                log.fragment && log.fragment.name === 'OfferingDeployed'
+            );
+            const offeringAddress = event.args.offeringAddress;
+            const offering = await ethers.getContractAt("Offering", offeringAddress);
+
+            // 2. Setup tokens
+            await saleToken.connect(tokenOwner).transfer(offeringAddress, ethers.parseUnits("200000"));
+            
+            // 3. Start sale and investments
+            await time.increaseTo(config.startDate + 10);
+            
+            const investment1 = ethers.parseUnits("1000");
+            const investment2 = ethers.parseUnits("2000");
+            
+            await paymentToken.connect(investor1).approve(await offering.getAddress(), investment1);
+            await paymentToken.connect(investor2).approve(await offering.getAddress(), investment2);
+            
+            await investmentManager.connect(investor1).routeInvestment(offeringAddress, await paymentToken.getAddress(), investment1);
+            await investmentManager.connect(investor2).routeInvestment(offeringAddress, await paymentToken.getAddress(), investment2);
+
+            // 4. Verify investments
+            expect(await offering.totalRaised()).to.equal(ethers.parseUnits("3000"));
+            expect(await offering.pendingTokens(investor1.address)).to.equal(ethers.parseUnits("2000"));
+            expect(await offering.pendingTokens(investor2.address)).to.equal(ethers.parseUnits("4000"));
+
+            // 5. Finalize offering
+            await time.increaseTo(config.endDate + 10);
+            await escrow.connect(treasuryOwner).finalizeOffering(offeringAddress);
+            
+            // 6. Claim tokens
+            const initialBalance1 = await saleToken.balanceOf(investor1.address);
+            const initialBalance2 = await saleToken.balanceOf(investor2.address);
+            
+            await investmentManager.connect(investor1).claimInvestmentTokens(offeringAddress);
+            await investmentManager.connect(investor2).claimInvestmentTokens(offeringAddress);
+            
+            const finalBalance1 = await saleToken.balanceOf(investor1.address);
+            const finalBalance2 = await saleToken.balanceOf(investor2.address);
+            
+            expect(finalBalance1 - initialBalance1).to.equal(ethers.parseUnits("2000"));
+            expect(finalBalance2 - initialBalance2).to.equal(ethers.parseUnits("4000"));
+        });
+
+        it("Should handle complete offering lifecycle with APY", async function () {
+            const fixture = await loadFixture(deployCompleteEcosystemFixture);
+            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, investmentManager, investor1, escrow, treasuryOwner, payoutToken, payoutAdmin } = fixture;
+            
+            // 1. Create APY offering
+            const config = await createOfferingConfig(fixture, true);
+            const tx = await offeringFactory.connect(deployer).createOfferingWithPaymentTokens(
+                config,
+                [await paymentToken.getAddress()],
+                [await paymentOracle.getAddress()]
+            );
+
+            const receipt = await tx.wait();
+            const event = receipt.logs.find(log => 
+                log.fragment && log.fragment.name === 'OfferingDeployed'
+            );
+            const offeringAddress = event.args.offeringAddress;
+            const offering = await ethers.getContractAt("Offering", offeringAddress);
+            const wrappedTokenAddress = await offering.wrappedTokenAddress();
+            const wrappedToken = await ethers.getContractAt("WRAPPEDTOKEN", wrappedTokenAddress);
+
+            // 2. Setup
+            await saleToken.connect(tokenOwner).transfer(offeringAddress, ethers.parseUnits("200000"));
+            const PAYOUT_ADMIN_ROLE = await wrappedToken.PAYOUT_ADMIN_ROLE();
+            await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
+            
+            // 3. Investment
+            await time.increaseTo(config.startDate + 10);
+            const investmentAmount = ethers.parseUnits("1000");
+            await paymentToken.connect(investor1).approve(await offering.getAddress(), investmentAmount);
+            await investmentManager.connect(investor1).routeInvestment(offeringAddress, await paymentToken.getAddress(), investmentAmount);
+
+            // 4. Finalize and claim wrapped tokens
+            await time.increaseTo(config.endDate + 10);
+            await escrow.connect(treasuryOwner).finalizeOffering(offeringAddress);
+            await investmentManager.connect(investor1).claimInvestmentTokens(offeringAddress);
+
+            // 5. Verify wrapped tokens
+            const wrappedBalance = await wrappedToken.balanceOf(investor1.address);
+            expect(wrappedBalance).to.equal(ethers.parseUnits("2000"));
+
+            // 6. Payout distribution
+            const firstPayoutDate = await wrappedToken.firstPayoutDate();
+            await time.increaseTo(Number(firstPayoutDate) + 10);
+            
+            const payoutAmount = ethers.parseUnits("100");
+            await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount);
+            await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payoutAmount);
+
+            // 7. Claim payout
+            const initialPayoutBalance = await payoutToken.balanceOf(investor1.address);
+            await wrappedToken.connect(investor1).claimAvailablePayouts();
+            const finalPayoutBalance = await payoutToken.balanceOf(investor1.address);
+            expect(finalPayoutBalance - initialPayoutBalance).to.equal(payoutAmount);
+
+            // 8. Final token redemption at maturity
+            await time.increaseTo(config.maturityDate + 10);
+            const initialSaleBalance = await saleToken.balanceOf(investor1.address);
+            await wrappedToken.connect(investor1).claimFinalTokens();
+            const finalSaleBalance = await saleToken.balanceOf(investor1.address);
+            expect(finalSaleBalance - initialSaleBalance).to.equal(ethers.parseUnits("2000"));
         });
     });
 });
