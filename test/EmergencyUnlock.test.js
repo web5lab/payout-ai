@@ -532,7 +532,7 @@ describe("Emergency Unlock Tests", function () {
 
             // Only investor2 should get the full payout now
             await wrappedToken.connect(investor2).claimAvailablePayouts();
-            const finalPayoutBalance = await payoutToken.balanceOf(investor2.address);
+            const finalPayoutBalance = await fixture.payoutToken.balanceOf(investor2.address);
             expect(finalPayoutBalance).to.equal(payoutAmount); // Gets all since others unlocked
         });
 
@@ -604,7 +604,7 @@ describe("Emergency Unlock Tests", function () {
             // Second payout - only investor2 should get it all
             await time.increase(PAYOUT_PERIOD_DURATION + 10);
             const payout2 = ethers.parseUnits("80");
-            await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
+            await fixture.payoutToken.connect(fixture.payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
             await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
 
             const payoutInfo2After = await wrappedToken.getUserPayoutInfo(investor2.address);

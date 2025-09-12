@@ -506,11 +506,8 @@ describe("Complete Offering Flow Tests", function () {
             await saleToken.connect(tokenOwner).transfer(offeringAddress, ethers.parseUnits("200000"));
 
             // Get fresh timestamp to avoid timestamp issues
-            const currentTime = await time.latest();
-            const newStartDate = currentTime + 100;
-            const newEndDate = newStartDate + 3600;
+            await time.increaseTo(config.startDate + 10);
             
-            await time.increaseTo(newStartDate);
 
             // Generate KYB signature
             const nonce = 1;
@@ -945,7 +942,6 @@ describe("Complete Offering Flow Tests", function () {
             await paymentToken.connect(investor1).approve(await offering.getAddress(), investmentAmount);
             await investmentManager.connect(investor1).routeInvestment(offeringAddress, await paymentToken.getAddress(), investmentAmount);
 
-            await time.increaseTo(newEndDate + 10);
             await time.increaseTo(config.endDate + 10);
             await escrow.connect(treasuryOwner).finalizeOffering(offeringAddress);
             await investmentManager.connect(investor1).claimInvestmentTokens(offeringAddress);

@@ -474,7 +474,7 @@ describe("Offering Cancellation Flow Tests", function () {
             await time.increaseTo(config.startDate + 10);
 
             // Invest to reach soft cap
-            const softCapInvestment = MAX_INVESTMENT; // Use max investment instead of soft cap
+            const softCapInvestment = SOFT_CAP; // Invest exactly the soft cap amount
             await paymentToken.connect(investor1).approve(await offering.getAddress(), softCapInvestment);
             await investmentManager.connect(investor1).routeInvestment(
                 await offering.getAddress(),
