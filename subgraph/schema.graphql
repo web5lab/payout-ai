@@ -223,6 +223,7 @@ type Offering @entity {
   saleToken: Bytes!
   saleTokenSymbol: String!
   saleTokenName: String!
+  saleTokenDecimals: BigInt!
   minInvestment: BigInt!
   maxInvestment: BigInt!
   startDate: BigInt!
