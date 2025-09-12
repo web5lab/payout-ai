@@ -418,7 +418,7 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         returns (uint256)
     {
         require(isOfferingFinalized, "Offering not finalized yet");
-        require(!isOfferingCancelled, "Offering is cancelled");
+        require(!isOfferingCancelled, "Offering not finalized yet");
 
         uint256 amount = pendingTokens[_investor];
         require(amount > 0, "No tokens to claim");

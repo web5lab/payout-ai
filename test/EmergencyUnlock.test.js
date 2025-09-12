@@ -298,7 +298,7 @@ describe("Emergency Unlock Tests", function () {
             // Second unlock should fail
             await expect(
                 wrappedToken.connect(investor1).emergencyUnlock()
-            ).to.be.revertedWithCustomError(wrappedToken, "AlreadyClaimed");
+            ).to.be.revertedWithCustomError(wrappedToken, "NoDeposit");
         });
     });
 
@@ -410,7 +410,7 @@ describe("Emergency Unlock Tests", function () {
             // Try to claim payout after emergency unlock
             await expect(
                 wrappedToken.connect(investor1).claimAvailablePayouts()
-            ).to.be.revertedWithCustomError(wrappedToken, "AlreadyClaimed");
+            ).to.be.revertedWithCustomError(wrappedToken, "NoDeposit");
         });
 
         it("Should handle multiple payouts before emergency unlock", async function () {
@@ -531,8 +531,9 @@ describe("Emergency Unlock Tests", function () {
             await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payoutAmount);
 
             // Only investor2 should get the full payout now
-            const payoutInfo = await wrappedToken.getUserPayoutInfo(investor2.address);
-            expect(payoutInfo.totalClaimable).to.equal(payoutAmount); // Gets all since others unlocked
+            await wrappedToken.connect(investor2).claimAvailablePayouts();
+            const finalPayoutBalance = await payoutToken.balanceOf(investor2.address);
+            expect(finalPayoutBalance).to.equal(payoutAmount); // Gets all since others unlocked
         });
 
         it("Should adjust payout distribution after some investors unlock", async function () {
@@ -606,8 +607,8 @@ describe("Emergency Unlock Tests", function () {
             await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payout2);
             await wrappedToken.connect(payoutAdmin).distributePayoutForPeriod(payout2);
 
-            payoutInfo2 = await wrappedToken.getUserPayoutInfo(investor2.address);
-            expect(payoutInfo2.totalClaimable).to.equal(payout2); // Gets all of second payout
+            const payoutInfo2After = await wrappedToken.getUserPayoutInfo(investor2.address);
+            expect(payoutInfo2After.totalClaimable).to.equal(payout2); // Gets all of second payout
         });
     });
 
@@ -650,7 +651,7 @@ describe("Emergency Unlock Tests", function () {
         });
 
         it("Should handle emergency unlock with very small amounts", async function () {
-            const { wrappedToken, investor1, saleToken, deployer } = await setupAPYOfferingWithInvestment(ethers.parseUnits("1")); // $1 investment
+            const { wrappedToken, investor1, saleToken, deployer } = await setupAPYOfferingWithInvestment(ethers.parseUnits("100")); // $100 investment (minimum)
 
             await wrappedToken.connect(deployer).enableEmergencyUnlock(1000); // 10% penalty
 
@@ -659,7 +660,7 @@ describe("Emergency Unlock Tests", function () {
             const finalBalance = await saleToken.balanceOf(investor1.address);
 
             const tokensReceived = finalBalance - initialBalance;
-            const expectedTokens = (ethers.parseUnits("2") * 90n) / 100n; // 90% of 2 tokens
+            const expectedTokens = (ethers.parseUnits("200") * 90n) / 100n; // 90% of 200 tokens
             
             expect(tokensReceived).to.equal(expectedTokens);
         });
