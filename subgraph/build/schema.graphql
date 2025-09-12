@@ -33,6 +33,7 @@ type User @entity {
   
   # Derived relationships
   investments: [UserInvestment!]! @derivedFrom(field: "user")
+  aggregatedInvestments: [UserOfferingInvestment!]! @derivedFrom(field: "user")
   claims: [UserClaim!]! @derivedFrom(field: "user")
   payouts: [UserPayout!]! @derivedFrom(field: "user")
   wrappedTokenHoldings: [UserWrappedTokenHolding!]! @derivedFrom(field: "user")
@@ -42,6 +43,41 @@ type User @entity {
   kybValidations: [UserKYBValidation!]! @derivedFrom(field: "user")
   notifications: [UserNotification!]! @derivedFrom(field: "user")
   activityHistory: [UserActivityHistory!]! @derivedFrom(field: "user")
+}
+
+type UserOfferingInvestment @entity {
+  id: Bytes! # user address + offering address
+  user: User!
+  userAddress: Bytes!
+  offering: Offering!
+  offeringAddress: Bytes!
+  
+  # Aggregated investment data
+  totalInvestments: BigInt!
+  totalPaidAmount: BigInt!
+  totalUSDValue: BigInt!
+  totalTokensReceived: BigInt!
+  totalWrappedTokensReceived: BigInt!
+  
+  # Payment method breakdown
+  totalETHInvested: BigInt!
+  totalERC20Invested: BigInt!
+  
+  # KYB tracking
+  totalKYBValidatedInvestments: BigInt!
+  
+  # Status tracking
+  hasClaimedTokens: Boolean!
+  totalTokensClaimed: BigInt!
+  hasReceivedRefund: Boolean!
+  totalRefundReceived: BigInt!
+  
+  # Timestamps
+  firstInvestmentAt: BigInt!
+  lastInvestmentAt: BigInt!
+  
+  # Link to individual investments
+  individualInvestments: [UserInvestment!]! @derivedFrom(field: "aggregatedInvestment")
 }
 
 # ============================================
@@ -69,6 +105,9 @@ type UserInvestment @entity {
   transactionHash: Bytes!
   gasUsed: BigInt!
   gasPrice: BigInt!
+  
+  # Link to aggregated investment
+  aggregatedInvestment: UserOfferingInvestment!
 }
 
 type UserClaim @entity {
@@ -183,6 +222,7 @@ type Offering @entity {
   tokenOwner: Bytes!
   saleToken: Bytes!
   saleTokenSymbol: String!
+  saleTokenName: String!
   minInvestment: BigInt!
   maxInvestment: BigInt!
   startDate: BigInt!
