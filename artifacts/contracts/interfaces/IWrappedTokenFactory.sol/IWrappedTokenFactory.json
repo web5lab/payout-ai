@@ -1,0 +1,147 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IWrappedTokenFactory",
+  "sourceName": "contracts/interfaces/IWrappedTokenFactory.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "symbol",
+              "type": "string"
+            },
+            {
+              "internalType": "address",
+              "name": "peggedToken",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "payoutToken",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maturityDate",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "payoutAPR",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "offeringContract",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "admin",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "payoutPeriodDuration",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct WrappedTokenConfig",
+          "name": "config",
+          "type": "tuple"
+        }
+      ],
+      "name": "createWrappedToken",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "wrappedTokenAddress",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllWrappedTokens",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "",
+          "type": "address[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getWrappedTokenAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wrappedTokenAddress",
+          "type": "address"
+        }
+      ],
+      "name": "getWrappedTokenCreator",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "creator",
+          "type": "address"
+        }
+      ],
+      "name": "getWrappedTokenIdsByCreator",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

@@ -1,6 +1,6 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+const { expect } = require("chai");
+const { ethers } = require("hardhat");
+const { time, loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("Complete Offering Flow Tests", function () {
     // Constants for test configuration
