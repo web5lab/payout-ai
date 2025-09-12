@@ -455,7 +455,7 @@ describe("Emergency Unlock Tests", function () {
     describe("5. Multiple Investors Emergency Unlock", function () {
         it("Should handle emergency unlock from multiple investors", async function () {
             const fixture = await loadFixture(deployEmergencyFixture);
-            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, payoutAdmin, investmentManager, investor1, investor2, investor3, escrow, treasuryOwner } = fixture;
+            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, payoutAdmin, investmentManager, investor1, investor2, investor3, escrow, treasuryOwner, payoutToken } = fixture;
             
             const config = await createOfferingConfig(fixture);
             
@@ -538,7 +538,7 @@ describe("Emergency Unlock Tests", function () {
 
         it("Should adjust payout distribution after some investors unlock", async function () {
             const fixture = await loadFixture(deployEmergencyFixture);
-            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, payoutAdmin, investmentManager, investor1, investor2, escrow, treasuryOwner } = fixture;
+            const { offeringFactory, deployer, paymentToken, paymentOracle, saleToken, tokenOwner, payoutAdmin, investmentManager, investor1, investor2, escrow, treasuryOwner, payoutToken } = fixture;
             
             const config = await createOfferingConfig(fixture);
             

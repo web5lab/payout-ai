@@ -469,7 +469,7 @@ describe("Offering Cancellation Flow Tests", function () {
         });
 
         it("Should prevent cancellation after soft cap finalization", async function () {
-            const { offering, config, investmentManager, investor1, paymentToken, tokenOwner } = await setupOfferingForCancellation(false);
+            const { offering, config, investmentManager, investor1, investor2, paymentToken, tokenOwner } = await setupOfferingForCancellation(false);
 
             await time.increaseTo(config.startDate + 10);
 
