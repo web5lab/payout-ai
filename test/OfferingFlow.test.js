@@ -937,12 +937,15 @@ describe("Complete Offering Flow Tests", function () {
             await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
             
             // 3. Investment
-            await time.increaseTo(config.startDate + 10);
+            const currentTime = await time.latest();
+            const safeStartTime = Math.max(currentTime + 100, config.startDate);
+            await time.increaseTo(safeStartTime);
             const investmentAmount = ethers.parseUnits("1000");
             await paymentToken.connect(investor1).approve(await offering.getAddress(), investmentAmount);
             await investmentManager.connect(investor1).routeInvestment(offeringAddress, await paymentToken.getAddress(), investmentAmount);
 
-            await time.increaseTo(config.endDate + 10);
+            const safeEndTime = Math.max(await time.latest() + 100, config.endDate);
+            await time.increaseTo(safeEndTime);
             await escrow.connect(treasuryOwner).finalizeOffering(offeringAddress);
             await investmentManager.connect(investor1).claimInvestmentTokens(offeringAddress);
 
@@ -952,7 +955,8 @@ describe("Complete Offering Flow Tests", function () {
 
             // 6. Payout distribution
             const firstPayoutDate = await wrappedToken.firstPayoutDate();
-            await time.increaseTo(Number(firstPayoutDate) + 10);
+            const safePayoutTime = Math.max(await time.latest() + 100, Number(firstPayoutDate));
+            await time.increaseTo(safePayoutTime);
             
             const payoutAmount = ethers.parseUnits("100");
             await payoutToken.connect(payoutAdmin).approve(await wrappedToken.getAddress(), payoutAmount);
@@ -965,7 +969,8 @@ describe("Complete Offering Flow Tests", function () {
             expect(finalPayoutBalance - initialPayoutBalance).to.equal(payoutAmount);
 
             // 8. Final token redemption at maturity
-            await time.increaseTo(config.maturityDate + 10);
+            const safeMaturityTime = Math.max(await time.latest() + 100, config.maturityDate);
+            await time.increaseTo(safeMaturityTime);
             const initialSaleBalance = await saleToken.balanceOf(investor1.address);
             await wrappedToken.connect(investor1).claimFinalTokens();
             const finalSaleBalance = await saleToken.balanceOf(investor1.address);
