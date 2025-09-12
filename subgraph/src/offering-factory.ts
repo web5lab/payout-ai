@@ -31,6 +31,15 @@ class ERC20 extends ethereum.SmartContract {
     let value = result.value
     return ethereum.CallResult.fromValue(value[0].toString())
   }
+
+  try_decimals(): ethereum.CallResult<i32> {
+    let result = super.tryCall("decimals", "decimals():(uint8)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toI32())
+  }
 }
 
 export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
@@ -58,6 +67,7 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
   offering.saleToken = saleTokenResult.reverted ? Bytes.empty() : saleTokenResult.value
   offering.saleTokenSymbol = getActualTokenSymbol(offering.saleToken)
   offering.saleTokenName = getActualTokenName(offering.saleToken)
+  offering.saleTokenDecimals = getActualTokenDecimals(offering.saleToken)
   
   let minInvestmentResult = offeringContract.try_minInvestment()
   offering.minInvestment = minInvestmentResult.reverted ? BigInt.fromI32(0) : minInvestmentResult.value
@@ -177,4 +187,21 @@ function getActualTokenName(tokenAddress: Bytes): string {
   
   // Fallback to generic name if contract call fails
   return "Token"
+}
+
+function getActualTokenDecimals(tokenAddress: Bytes): BigInt {
+  if (tokenAddress.equals(Address.zero())) {
+    return BigInt.fromI32(18) // ETH has 18 decimals
+  }
+  
+  // Try to read actual decimals from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let decimalsResult = erc20Contract.try_decimals()
+  
+  if (!decimalsResult.reverted) {
+    return BigInt.fromI32(decimalsResult.value)
+  }
+  
+  // Fallback to 18 decimals if contract call fails
+  return BigInt.fromI32(18)
 }
