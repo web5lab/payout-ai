@@ -1,4 +1,0 @@
-npm run codegen
-npm run build
-
-npx goldsky subgraph deploy offering-subgraph/1.0.0 --path .

@@ -500,7 +500,7 @@ contract WRAPPEDTOKEN is
     ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant whenNotPaused {
         // Checks: Input validation with overflow protection
         if (_amount == 0) revert InvalidAmount();
-        require(_amount <= type(uint128).max, "Payout amount too large");
+        require(_amount <= type(uint256).max, "Payout amount too large");
 
         // Checks: Verify we can start a new payout period
         uint256 nextPayoutTime = getNextPayoutTime();
@@ -513,12 +513,10 @@ contract WRAPPEDTOKEN is
 
         // Effects: Update state after successful transfer
         currentPayoutPeriod += 1;
-        require(currentPayoutPeriod <= type(uint64).max, "Too many payout periods");
-        
         lastPayoutDistributionTime = block.timestamp;
 
         // Effects: Take snapshot of current total USDT invested for fair distribution
-        require(totalUSDTInvested <= type(uint128).max, "Total USDT too large");
+        require(totalUSDTInvested <= type(uint256).max, "Total USDT too large");
         totalUSDTSnapshot[currentPayoutPeriod] = totalUSDTInvested;
         payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
 

@@ -161,7 +161,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         startDate = config.startDate;
         endDate = config.endDate;
         softCap = config.softCap;
-        softCap = config.softCap;
         fundraisingCap = config.fundraisingCap;
         tokenPrice = config.tokenPrice;
         escrowAddress = config.escrowAddress;
@@ -246,7 +245,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(investor != address(0), "Invalid investor address");
         require(!isSaleClosed, "Sale is closed");
         require(!isOfferingCancelled, "Offering is cancelled");
-        require(!isOfferingCancelled, "Offering is cancelled");
         require(block.timestamp >= startDate, "Sale not started");
         require(block.timestamp < endDate, "Sale ended");
         require(
@@ -264,15 +262,15 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(totalRaised + usdValue <= fundraisingCap, "Exceeds cap");
 
         // Additional safety checks for investment limits
-        require(usdValue <= type(uint128).max, "Investment amount too large");
+        require(usdValue <= type(uint256).max, "Investment amount too large");
         require(
-            totalRaised <= type(uint128).max - usdValue,
+            totalRaised <= type(uint256).max - usdValue,
             "Total raised would overflow"
         );
 
         uint256 tokensToReceive = (usdValue * 1e18) / tokenPrice;
         require(tokensToReceive > 0, "Token amount too low");
-        require(tokensToReceive <= type(uint128).max, "Token amount too large");
+        require(tokensToReceive <= type(uint256).max, "Token amount too large");
 
         // Update investment tracking
         totalRaised += usdValue;
@@ -326,11 +324,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         totalPendingTokens += tokensToReceive;
 
         emit Invested(investor, paymentToken, paymentAmount, tokensToReceive);
-
-        // Check if soft cap is reached
-        if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
-            emit SoftCapReached(totalRaised, softCap);
-        }
 
         // Check if soft cap is reached
         if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
@@ -427,9 +420,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         require(isOfferingFinalized, "Offering not finalized yet");
         require(!isOfferingCancelled, "Offering is cancelled");
 
-        require(isOfferingFinalized, "Offering not finalized yet");
-        require(!isOfferingCancelled, "Offering is cancelled");
-
         uint256 amount = pendingTokens[_investor];
         require(amount > 0, "No tokens to claim");
         require(
@@ -464,7 +454,6 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
     function reclaimUnclaimedTokens(
         address to
     ) external onlyRole(TOKEN_OWNER_ROLE) nonReentrant {
-        require(isOfferingFinalized, "Offering not finalized");
         require(isOfferingFinalized, "Offering not finalized");
         require(to != address(0), "Invalid address");
 
