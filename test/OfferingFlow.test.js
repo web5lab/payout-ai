@@ -937,12 +937,14 @@ describe("Complete Offering Flow Tests", function () {
             await wrappedToken.connect(deployer).grantRole(PAYOUT_ADMIN_ROLE, payoutAdmin.address);
             
             // 3. Investment
-            await time.increaseTo(config.startDate + 10);
+            const currentTime = await time.latest();
+            const safeStartTime = Math.max(currentTime + 100, config.startDate);
+            await time.increaseTo(safeStartTime);
             const investmentAmount = ethers.parseUnits("1000");
             await paymentToken.connect(investor1).approve(await offering.getAddress(), investmentAmount);
             await investmentManager.connect(investor1).routeInvestment(offeringAddress, await paymentToken.getAddress(), investmentAmount);
 
-            await time.increaseTo(config.endDate + 10);
+            await time.increaseTo(safeStartTime + 3700); // 1 hour + 100 seconds after safe start
             await escrow.connect(treasuryOwner).finalizeOffering(offeringAddress);
             await investmentManager.connect(investor1).claimInvestmentTokens(offeringAddress);
 

@@ -474,12 +474,22 @@ describe("Offering Cancellation Flow Tests", function () {
             await time.increaseTo(config.startDate + 10);
 
             // Invest to reach soft cap
-            const softCapInvestment = SOFT_CAP; // Invest exactly the soft cap amount
+            const softCapInvestment = MAX_INVESTMENT; // Use max investment per user
             await paymentToken.connect(investor1).approve(await offering.getAddress(), softCapInvestment);
             await investmentManager.connect(investor1).routeInvestment(
                 await offering.getAddress(),
                 await paymentToken.getAddress(),
                 softCapInvestment
+            );
+
+            // Need additional investor to reach soft cap since one investor can only invest MAX_INVESTMENT ($5000)
+            // but soft cap is $10000
+            const additionalInvestment = SOFT_CAP - MAX_INVESTMENT; // $5000 more needed
+            await paymentToken.connect(investor2).approve(await offering.getAddress(), additionalInvestment);
+            await investmentManager.connect(investor2).routeInvestment(
+                await offering.getAddress(),
+                await paymentToken.getAddress(),
+                additionalInvestment
             );
 
             // Finalize early due to soft cap
