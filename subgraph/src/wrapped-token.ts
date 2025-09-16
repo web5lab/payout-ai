@@ -22,7 +22,8 @@ import {
   PayoutSchedule,
   UserNotification,
   UserActivityHistory,
-  Offering
+  Offering,
+  OfferingPayoutRound
 } from "../generated/schema"
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
 import { 
@@ -142,7 +143,7 @@ function createPayoutSchedule(wrappedToken: WrappedToken, timestamp: BigInt): vo
 
 // Create offering-level payout rounds when first payout date is set
 function createOfferingPayoutRounds(
-  offeringAddress: Address,
+  offeringAddress: Bytes,
   wrappedToken: WrappedToken,
   timestamp: BigInt
 ): void {
