@@ -70,10 +70,13 @@ contract WRAPPEDTOKEN is
     IERC20 public immutable payoutToken;
 
     /// @dev Unix timestamp when wrapped tokens mature and can be redeemed
-    uint256 public immutable maturityDate;
+    uint256 public maturityDate;
 
     /// @dev Duration between payout periods in seconds
     uint256 public immutable payoutPeriodDuration;
+
+    /// @dev Total number of payout rounds
+    uint256 public immutable totalPayoutRound;
 
     /// @dev Address of the offering contract authorized to register investments
     address public immutable offeringContract;
@@ -85,7 +88,7 @@ contract WRAPPEDTOKEN is
     // STATE VARIABLES
     // ============================================
 
-    /// @dev Current Annual Percentage Rate for payouts (modifiable by admin)
+    /// @dev Current Annual Percentage Rate for payouts
     uint256 public payoutAPR;
 
     /// @dev Total amount of peggedToken held in escrow
@@ -100,27 +103,18 @@ contract WRAPPEDTOKEN is
     /// @dev Penalty percentage for emergency unlocks (in basis points)
     uint256 public emergencyUnlockPenalty;
 
-    /// @dev Current payout period number (starts at 0)
-    uint256 public currentPayoutPeriod;
+    /// @dev Current payout round number (starts at 0)
+    uint256 public currentPayoutRound;
 
-    /// @dev Timestamp of the last payout distribution
-    uint256 public lastPayoutDistributionTime;
+    /// @dev indicates if the investment period is closed
+    bool public investmentClosed;
 
     // ============================================
     // MAPPINGS
     // ============================================
 
     /// @dev Amount of payout tokens distributed for each period
-    mapping(uint256 => uint256) public payoutFundsPerPeriod;
-
-    /// @dev Total USDT invested at the time of each payout distribution
-    mapping(uint256 => uint256) public totalUSDTSnapshot;
-
-    /// @dev Last payout period claimed by each user
-    mapping(address => uint256) public userLastClaimedPeriod;
-
-    /// @dev User's USDT investment value at each period (for fair distribution)
-    mapping(address => mapping(uint256 => uint256)) public userUSDTSnapshot;
+    mapping(uint256 => uint256) public payoutFundsPerRound;
 
     /**
      * @dev Struct containing investor information
@@ -136,6 +130,7 @@ contract WRAPPEDTOKEN is
         bool hasClaimedFinalTokens;
         bool emergencyUnlocked;
         uint256 totalPayoutsClaimed;
+        uint256 lastClaimedPayoutRound;
     }
 
     /// @dev Mapping of investor addresses to their investment information
@@ -150,6 +145,9 @@ contract WRAPPEDTOKEN is
 
     /// @dev Thrown when providing invalid amounts (zero or negative)
     error InvalidAmount();
+
+    /// @dev Thrown when trying to invest after investment period is closed
+    error investmentIsClosed();
 
     /// @dev Thrown when providing invalid token addresses
     error InvalidToken();
@@ -270,9 +268,8 @@ contract WRAPPEDTOKEN is
         ) {
             revert InvalidStablecoin();
         }
-        if (config.maturityDate <= block.timestamp)
+        if (config.payoutPeriodDuration == 0 || config.totalPayoutRound == 0)
             revert InvalidConfiguration();
-        if (config.payoutPeriodDuration == 0) revert InvalidConfiguration();
         if (config.offeringContract == address(0)) revert ZeroAddress();
         if (config.payoutAPR == 0 || config.payoutAPR > 10000)
             revert InvalidAPR(); // Max 100% APR
@@ -280,8 +277,8 @@ contract WRAPPEDTOKEN is
         // Set immutable variables
         peggedToken = IERC20(config.peggedToken);
         payoutToken = IERC20(config.payoutToken);
-        maturityDate = config.maturityDate;
         payoutPeriodDuration = config.payoutPeriodDuration;
+        totalPayoutRound = config.totalPayoutRound;
         offeringContract = config.offeringContract;
         payoutAPR = config.payoutAPR;
 
@@ -291,8 +288,7 @@ contract WRAPPEDTOKEN is
         _grantRole(PAUSE_ROLE, config.admin);
 
         // Initialize payout period tracking
-        currentPayoutPeriod = 0;
-        lastPayoutDistributionTime = 0;
+        currentPayoutRound = 0;
     }
 
     // ============================================
@@ -355,6 +351,7 @@ contract WRAPPEDTOKEN is
         uint256 amount,
         uint256 usdtValue
     ) external onlyOfferingContract whenNotPaused validAddress(_user) {
+        if (investmentClosed) revert investmentIsClosed();
         // Checks: Input validation
         if (amount == 0 || usdtValue == 0) revert InvalidAmount();
 
@@ -368,15 +365,6 @@ contract WRAPPEDTOKEN is
         // Effects: Record/Update investment information
         investors[_user].deposited += amount;
         investors[_user].usdtValue += usdtValue;
-
-        // Effects: Snapshot user USDT value for existing periods (lazy snapshotting)
-        if (currentPayoutPeriod > 0) {
-            for (uint256 i = 1; i <= currentPayoutPeriod; i++) {
-                if (userUSDTSnapshot[_user][i] == 0) {
-                    userUSDTSnapshot[_user][i] = investors[_user].usdtValue;
-                }
-            }
-        }
 
         // Interactions: External call last (CEI pattern)
         if (
@@ -476,7 +464,6 @@ contract WRAPPEDTOKEN is
     /**
      * @notice Distribute payout tokens for a new period (admin only)
      * @dev Only callable by addresses with PAYOUT_ADMIN_ROLE
-     * @param _amount Amount of payout tokens to distribute
      *
      * Requirements:
      * - Caller must have PAYOUT_ADMIN_ROLE
@@ -495,35 +482,50 @@ contract WRAPPEDTOKEN is
      * @custom:security Uses nonReentrant to prevent reentrancy attacks
      * @custom:security Follows Checks-Effects-Interactions pattern
      */
-    function distributePayoutForPeriod(
-        uint256 _amount
-    ) external onlyRole(PAYOUT_ADMIN_ROLE) nonReentrant whenNotPaused {
-        // Checks: Input validation with overflow protection
-        if (_amount == 0) revert InvalidAmount();
-        require(_amount <= type(uint256).max, "Payout amount too large");
-
+    function distributePayout()
+        external
+        onlyRole(PAYOUT_ADMIN_ROLE)
+        nonReentrant
+        whenNotPaused
+    {
         // Checks: Verify we can start a new payout period
         uint256 nextPayoutTime = getNextPayoutTime();
         if (block.timestamp < nextPayoutTime) revert PayoutNotAvailable();
 
+        // Auto-calculate the required payout amount
+        (uint256 requiredAmount, ) = this.calculateRequiredPayoutTokens();
+
+        // Checks: Input validation with overflow protection
+        if (requiredAmount == 0) revert NoPayout(); // No payout required if amount is zero
+        require(requiredAmount <= type(uint256).max, "Payout amount too large");
+
         // Interactions: Transfer tokens before state changes
-        if (!payoutToken.transferFrom(msg.sender, address(this), _amount)) {
+        // The admin must have approved this contract to spend at least `requiredAmount`
+        if (
+            !payoutToken.transferFrom(
+                msg.sender,
+                address(this),
+                requiredAmount
+            )
+        ) {
             revert TransferFailed();
         }
 
         // Effects: Update state after successful transfer
-        currentPayoutPeriod += 1;
-        lastPayoutDistributionTime = block.timestamp;
+        currentPayoutRound += 1;
 
         // Effects: Take snapshot of current total USDT invested for fair distribution
         require(totalUSDTInvested <= type(uint256).max, "Total USDT too large");
-        totalUSDTSnapshot[currentPayoutPeriod] = totalUSDTInvested;
-        payoutFundsPerPeriod[currentPayoutPeriod] = _amount;
+        payoutFundsPerRound[currentPayoutRound] = requiredAmount;
 
         // Note: User USDT snapshots are handled lazily in getUserUSDTAtPeriod()
         // This approach saves gas during distribution and only snapshots when needed
 
-        emit PayoutDistributed(currentPayoutPeriod, _amount, totalUSDTInvested);
+        emit PayoutDistributed(
+            currentPayoutRound,
+            requiredAmount,
+            totalUSDTInvested
+        );
     }
 
     // ============================================
@@ -561,35 +563,35 @@ contract WRAPPEDTOKEN is
 
         // Checks: Validate user eligibility
         if (investor.deposited == 0) revert NoDeposit();
-        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked) revert AlreadyClaimed();
+        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked)
+            revert AlreadyClaimed();
 
         uint256 totalClaimable = 0;
-        uint256 lastClaimed = userLastClaimedPeriod[user];
+        uint256 lastClaimed = investor.lastClaimedPayoutRound; // Use from Investor struct
 
         // Checks/Effects: Calculate claimable amount from unclaimed periods
         for (
             uint256 period = lastClaimed + 1;
-            period <= currentPayoutPeriod;
+            period <= currentPayoutRound;
             period++
         ) {
-            uint256 periodFunds = payoutFundsPerPeriod[period];
-            uint256 totalUSDTAtPeriod = totalUSDTSnapshot[period];
+            uint256 periodFunds = payoutFundsPerRound[period];
 
-            if (periodFunds > 0 && totalUSDTAtPeriod > 0) {
+            if (periodFunds > 0 && totalUSDTInvested > 0) {
                 // Get user USDT value at the time of distribution
-                uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(user, period);
+                uint256 userUSDTAtPeriod = getUserUSDT(user);
 
-                if (userUSDTAtPeriod > 0) {
+                if (totalUSDTInvested > 0) {
                     // Additional safety check to prevent division by zero
-                    if (totalUSDTAtPeriod == 0) {
+                    if (totalUSDTInvested == 0) {
                         continue; // Skip this period if total USDT is zero
                     }
-                    
+
                     // Calculate share with overflow protection
                     uint256 userShare = Math.mulDiv(
                         periodFunds,
                         userUSDTAtPeriod,
-                        totalUSDTAtPeriod
+                        totalUSDTInvested
                     );
                     totalClaimable += userShare;
                 }
@@ -599,7 +601,7 @@ contract WRAPPEDTOKEN is
         if (totalClaimable == 0) revert NoPayout();
 
         // Effects: Update state before external call
-        userLastClaimedPeriod[user] = currentPayoutPeriod;
+        investor.lastClaimedPayoutRound = currentPayoutRound; // Update in Investor struct
         investor.totalPayoutsClaimed += totalClaimable;
 
         // Checks: Ensure we don't exceed contract balance (safety check)
@@ -612,13 +614,12 @@ contract WRAPPEDTOKEN is
         bool transferSuccess = payoutToken.transfer(user, totalClaimable);
         require(transferSuccess, "Payout transfer failed");
 
-        emit PayoutClaimed(user, totalClaimable, currentPayoutPeriod);
+        emit PayoutClaimed(user, totalClaimable, currentPayoutRound);
     }
 
     /**
      * @dev Get user's USDT value at a specific period with lazy snapshotting
      * @param user Address of the user
-     * @param period Payout period number
      * @return User's USDT value at the specified period
      *
      * Logic:
@@ -626,22 +627,9 @@ contract WRAPPEDTOKEN is
      * - If no snapshot exists, uses current USDT value (lazy approach)
      * - This saves gas during distribution by not snapshotting all users upfront
      */
-    function getUserUSDTAtPeriod(
-        address user,
-        uint256 period
+    function getUserUSDT(
+        address user
     ) internal view returns (uint256) {
-        // Safety check: prevent division by zero in calling functions
-        if (totalUSDTSnapshot[period] == 0) {
-            return 0;
-        }
-        
-        // If we have a snapshot, use it
-        uint256 snapshotUSDT = userUSDTSnapshot[user][period];
-        if (snapshotUSDT > 0) {
-            return snapshotUSDT;
-        }
-
-        // Otherwise, use current USDT value (lazy approach)
         return investors[user].usdtValue;
     }
 
@@ -684,17 +672,17 @@ contract WRAPPEDTOKEN is
 
         // Return basic information
         totalClaimed = investor.totalPayoutsClaimed;
-        lastClaimedPeriod = userLastClaimedPeriod[_user];
+        lastClaimedPeriod = investor.lastClaimedPayoutRound; // Use from Investor struct
         userUSDTValue = investor.usdtValue;
 
         // Count claimable periods first
         uint256 claimableCount = 0;
         for (
             uint256 period = lastClaimedPeriod + 1;
-            period <= currentPayoutPeriod;
+            period <= currentPayoutRound;
             period++
         ) {
-            if (payoutFundsPerPeriod[period] > 0) {
+            if (payoutFundsPerRound[period] > 0) {
                 claimableCount++;
             }
         }
@@ -709,26 +697,25 @@ contract WRAPPEDTOKEN is
 
         for (
             uint256 period = lastClaimedPeriod + 1;
-            period <= currentPayoutPeriod;
+            period <= currentPayoutRound;
             period++
         ) {
-            uint256 periodFunds = payoutFundsPerPeriod[period];
-            uint256 totalUSDTAtPeriod = totalUSDTSnapshot[period];
+            uint256 periodFunds = payoutFundsPerRound[period];
 
-            if (periodFunds > 0 && totalUSDTAtPeriod > 0) {
-                uint256 userUSDTAtPeriod = getUserUSDTAtPeriod(_user, period);
+            if (periodFunds > 0 && totalUSDTInvested > 0) {
+                uint256 userUSDTAtPeriod = getUserUSDT(_user);
 
                 if (userUSDTAtPeriod > 0) {
                     // Additional safety check to prevent division by zero
-                    if (totalUSDTAtPeriod == 0) {
+                    if (totalUSDTInvested == 0) {
                         continue; // Skip this period
                     }
-                    
+
                     // Calculate share with overflow protection
                     uint256 userShare = Math.mulDiv(
                         periodFunds,
                         userUSDTAtPeriod,
-                        totalUSDTAtPeriod
+                        totalUSDTInvested
                     );
 
                     claimablePeriods[index] = period;
@@ -795,7 +782,10 @@ contract WRAPPEDTOKEN is
         _burn(msg.sender, wrappedBalance);
 
         // Interactions: Transfer original tokens
-        bool transferSuccess = peggedToken.transfer(msg.sender, depositedAmount);
+        bool transferSuccess = peggedToken.transfer(
+            msg.sender,
+            depositedAmount
+        );
         require(transferSuccess, "Final token transfer failed");
 
         emit FinalTokensClaimed(msg.sender, depositedAmount);
@@ -852,7 +842,8 @@ contract WRAPPEDTOKEN is
 
         Investor storage investor = investors[msg.sender];
         if (investor.deposited == 0) revert NoDeposit();
-        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked) revert AlreadyClaimed();
+        if (investor.hasClaimedFinalTokens || investor.emergencyUnlocked)
+            revert AlreadyClaimed();
 
         uint256 wrappedBalance = balanceOf(msg.sender);
         uint256 depositedAmount = investor.deposited;
@@ -897,10 +888,7 @@ contract WRAPPEDTOKEN is
         if (firstPayoutDate == 0) {
             revert FirstPayoutDateNotSet();
         }
-        if (lastPayoutDistributionTime == 0) {
-            return firstPayoutDate;
-        }
-        return lastPayoutDistributionTime + payoutPeriodDuration;
+        return firstPayoutDate + (currentPayoutRound * payoutPeriodDuration);
     }
 
     /**
@@ -914,20 +902,18 @@ contract WRAPPEDTOKEN is
      *
      * Effects:
      * - Sets the firstPayoutDate.
+     * - Sets the maturityDate based on totalPayoutRound and payoutPeriodDuration.
      * - Emits a FirstPayoutDateSet event.
      */
     function setFirstPayoutDate() external onlyOfferingContract {
         if (firstPayoutDate != 0) revert InvalidConfiguration(); // Already set
 
+        investmentClosed = true; // Close investment period
         firstPayoutDate = block.timestamp + payoutPeriodDuration;
+        maturityDate =
+            firstPayoutDate +
+            (totalPayoutRound * payoutPeriodDuration);
         emit FirstPayoutDateSet(firstPayoutDate);
-    }
-
-    /**
-     * @notice Check if payout period is available
-     */
-    function isPayoutPeriodAvailable() external view returns (bool) {
-        return block.timestamp >= getNextPayoutTime();
     }
 
     /**
@@ -938,15 +924,13 @@ contract WRAPPEDTOKEN is
         view
         returns (
             uint256 period,
-            uint256 lastDistributionTime,
             uint256 nextPayoutTime,
             bool canDistribute,
             uint256 requiredTokens,
             uint256 currentAPR
         )
     {
-        period = currentPayoutPeriod;
-        lastDistributionTime = lastPayoutDistributionTime;
+        period = currentPayoutRound;
         nextPayoutTime = getNextPayoutTime();
         canDistribute = block.timestamp >= nextPayoutTime;
         (requiredTokens, ) = this.calculateRequiredPayoutTokens();
@@ -1015,7 +999,7 @@ contract WRAPPEDTOKEN is
             uint256 maturityTimestamp,
             uint256 totalEscrowedAmount,
             uint256 totalUSDTInvestedAmount,
-            uint256 currentPeriod,
+            uint256 currentPayoutRound,
             uint256 currentPayoutAPR,
             bool emergencyUnlockStatus,
             uint256 emergencyPenalty
@@ -1027,7 +1011,7 @@ contract WRAPPEDTOKEN is
             maturityDate,
             totalEscrowed,
             totalUSDTInvested,
-            currentPayoutPeriod,
+            currentPayoutRound,
             payoutAPR,
             emergencyUnlockEnabled,
             emergencyUnlockPenalty

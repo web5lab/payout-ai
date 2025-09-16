@@ -329,6 +329,12 @@ contract Offering is AccessControl, Pausable, ReentrancyGuard {
         if (totalRaised >= softCap && totalRaised < softCap + usdValue) {
             emit SoftCapReached(totalRaised, softCap);
         }
+
+        // Close sale if cap reached
+        if (totalRaised >= fundraisingCap) {
+            isSaleClosed = true;
+            emit SaleClosed(totalRaised);
+        }
         return tokensToReceive;
     }
 

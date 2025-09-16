@@ -25,7 +25,7 @@ struct CreateOfferingConfig {
     address payoutTokenAddress;
     uint256 payoutRate;
     uint256 payoutPeriodDuration;
-    uint256 maturityDate;
+    uint256 totalPayoutRound;
 }
 
 /**
@@ -133,11 +133,11 @@ contract OfferingFactory is Ownable {
                 symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
-                maturityDate: config.maturityDate,
                 payoutAPR: config.payoutRate,
                 offeringContract: address(offering),
                 admin: msg.sender,
-                payoutPeriodDuration: config.payoutPeriodDuration
+                payoutPeriodDuration: config.payoutPeriodDuration,
+                totalPayoutRound: config.totalPayoutRound
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig
@@ -205,11 +205,11 @@ contract OfferingFactory is Ownable {
                 symbol: wrappedSymbol,
                 peggedToken: config.saleToken,
                 payoutToken: config.payoutTokenAddress,
-                maturityDate: config.maturityDate,
                 payoutAPR: config.payoutRate,
                 offeringContract: address(offering),
                 admin: msg.sender,
-                payoutPeriodDuration: config.payoutPeriodDuration
+                payoutPeriodDuration: config.payoutPeriodDuration,
+                totalPayoutRound: config.totalPayoutRound
             });
             wrappedTokenAddress = wrappedTokenFactory.createWrappedToken(
                 wrappedConfig

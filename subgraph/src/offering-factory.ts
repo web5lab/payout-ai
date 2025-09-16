@@ -1,0 +1,221 @@
+import {
+  OfferingDeployed as OfferingDeployedEvent
+} from "../generated/OfferingFactory/OfferingFactory"
+import { Offering as OfferingContract } from "../generated/OfferingFactory/Offering"
+import { User, Offering, OfferingDeployment } from "../generated/schema"
+import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts"
+import { ethereum } from "@graphprotocol/graph-ts"
+import { getOrCreateUser, updateUserActivity } from "./user-manager"
+import { Offering as OfferingTemplate } from "../generated/templates"
+
+// Add ERC20 interface for reading token metadata
+class ERC20 extends ethereum.SmartContract {
+  static bind(address: Address): ERC20 {
+    return new ERC20("ERC20", address)
+  }
+
+  try_symbol(): ethereum.CallResult<string> {
+    let result = super.tryCall("symbol", "symbol():(string)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toString())
+  }
+
+  try_name(): ethereum.CallResult<string> {
+    let result = super.tryCall("name", "name():(string)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toString())
+  }
+
+  try_decimals(): ethereum.CallResult<i32> {
+    let result = super.tryCall("decimals", "decimals():(uint8)", [])
+    if (result.reverted) {
+      return new ethereum.CallResult()
+    }
+    let value = result.value
+    return ethereum.CallResult.fromValue(value[0].toI32())
+  }
+}
+
+export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
+  let creator = getOrCreateUser(event.params.creator, event.block.timestamp)
+  
+  // Update creator stats
+  creator.totalOfferingsCreated = creator.totalOfferingsCreated.plus(BigInt.fromI32(1))
+  creator.save()
+  
+  // Create template to track offering events
+  OfferingTemplate.create(event.params.offeringAddress)
+  
+  // Bind to the actual offering contract to read real data
+  let offeringContract = OfferingContract.bind(event.params.offeringAddress)
+  
+  // Create offering entity with contract data
+  let offering = new Offering(event.params.offeringAddress)
+
+  offering.creator = event.params.creator
+  offering.creatorAddress = event.params.creator
+  offering.tokenOwner = event.params.tokenOwner
+  
+  // Read actual contract data
+  let saleTokenResult = offeringContract.try_saleToken()
+  offering.saleToken = saleTokenResult.reverted ? Bytes.empty() : saleTokenResult.value
+  offering.saleTokenSymbol = getActualTokenSymbol(offering.saleToken)
+  offering.saleTokenName = getActualTokenName(offering.saleToken)
+  offering.saleTokenDecimals = getActualTokenDecimals(offering.saleToken)
+  
+  let minInvestmentResult = offeringContract.try_minInvestment()
+  offering.minInvestment = minInvestmentResult.reverted ? BigInt.fromI32(0) : minInvestmentResult.value
+  
+  let maxInvestmentResult = offeringContract.try_maxInvestment()
+  offering.maxInvestment = maxInvestmentResult.reverted ? BigInt.fromI32(0) : maxInvestmentResult.value
+  
+  let startDateResult = offeringContract.try_startDate()
+  offering.startDate = startDateResult.reverted ? BigInt.fromI32(0) : startDateResult.value
+  
+  let endDateResult = offeringContract.try_endDate()
+  offering.endDate = endDateResult.reverted ? BigInt.fromI32(0) : endDateResult.value
+  
+  let fundraisingCapResult = offeringContract.try_fundraisingCap()
+  offering.fundraisingCap = fundraisingCapResult.reverted ? BigInt.fromI32(0) : fundraisingCapResult.value
+  
+  let softCapResult = offeringContract.try_softCap()
+  offering.softCap = softCapResult.reverted ? BigInt.fromI32(0) : softCapResult.value
+  
+  let tokenPriceResult = offeringContract.try_tokenPrice()
+  offering.tokenPrice = tokenPriceResult.reverted ? BigInt.fromI32(0) : tokenPriceResult.value
+  
+  let totalRaisedResult = offeringContract.try_totalRaised()
+  offering.totalRaised = BigInt.fromI32(0) // Always start from 0, let events update this
+  
+  let apyEnabledResult = offeringContract.try_apyEnabled()
+  offering.apyEnabled = apyEnabledResult.reverted ? false : apyEnabledResult.value
+  
+  let wrappedTokenResult = offeringContract.try_wrappedTokenAddress()
+  offering.wrappedTokenAddress = wrappedTokenResult.reverted ? null : wrappedTokenResult.value
+  
+  let payoutTokenResult = offeringContract.try_payoutTokenAddress()
+  offering.payoutTokenAddress = payoutTokenResult.reverted ? null : payoutTokenResult.value
+  
+  let payoutRateResult = offeringContract.try_payoutRate()
+  offering.payoutRate = payoutRateResult.reverted ? BigInt.fromI32(0) : payoutRateResult.value
+  
+  // Set maturity date (this might need to be read from wrapped token if APY enabled)
+  offering.maturityDate = offering.endDate // Default to end date, can be updated later
+  
+  // Set autoTransfer based on contract logic (typically true for most offerings)
+  offering.autoTransfer = true
+  
+  // Initialize status
+  offering.isActive = true
+  offering.isFinalized = false
+  offering.isCancelled = false
+  offering.softCapReached = false
+  
+  // Initialize statistics
+  offering.totalInvestors = BigInt.fromI32(0)
+  offering.totalTokensDistributed = BigInt.fromI32(0)
+  offering.totalRefunded = BigInt.fromI32(0)
+  
+  // Initialize payout statistics
+  offering.totalPayoutDistributions = BigInt.fromI32(0)
+  offering.totalPayoutVolume = BigInt.fromI32(0)
+  offering.totalPayoutsClaimed = BigInt.fromI32(0)
+  offering.currentPayoutPeriod = BigInt.fromI32(0)
+  offering.nextPayoutTime = BigInt.fromI32(0)
+  
+  // Set payout status based on APY enablement
+  if (offering.apyEnabled) {
+    offering.payoutStatus = "waiting"
+  } else {
+    offering.payoutStatus = "not_applicable"
+  }
+  
+  // Set timestamps
+  offering.createdAt = event.block.timestamp
+  offering.createdBlock = event.block.number
+  
+  offering.save()
+
+  // Create offering deployment record
+  let deploymentId = event.transaction.hash.concatI32(event.logIndex.toI32())
+  let deployment = new OfferingDeployment(deploymentId)
+  deployment.offeringId = event.params.offeringId
+  deployment.creator = event.params.creator
+  deployment.creatorAddress = event.params.creator
+  deployment.offeringAddress = event.params.offeringAddress
+  deployment.tokenOwner = event.params.tokenOwner
+  deployment.blockNumber = event.block.number
+  deployment.blockTimestamp = event.block.timestamp
+  deployment.transactionHash = event.transaction.hash
+  deployment.save()
+  
+  // Update user activity
+  updateUserActivity(
+    event.params.creator,
+    "offering_created",
+    BigInt.fromI32(0),
+    offering.saleToken,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    "Created new offering: " + event.params.offeringAddress.toHexString(),
+    event.params.offeringAddress
+  )
+}
+
+function getActualTokenSymbol(tokenAddress: Bytes): string {
+  if (tokenAddress.equals(Address.zero())) {
+    return "ETH"
+  }
+  
+  // Try to read actual symbol from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let symbolResult = erc20Contract.try_symbol()
+  
+  if (!symbolResult.reverted) {
+    return symbolResult.value
+  }
+  
+  // Fallback to generic symbol if contract call fails
+  return "TOKEN"
+}
+
+function getActualTokenName(tokenAddress: Bytes): string {
+  if (tokenAddress.equals(Address.zero())) {
+    return "Ethereum"
+  }
+  
+  // Try to read actual name from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let nameResult = erc20Contract.try_name()
+  
+  if (!nameResult.reverted) {
+    return nameResult.value
+  }
+  
+  // Fallback to generic name if contract call fails
+  return "Token"
+}
+
+function getActualTokenDecimals(tokenAddress: Bytes): BigInt {
+  if (tokenAddress.equals(Address.zero())) {
+    return BigInt.fromI32(18) // ETH has 18 decimals
+  }
+  
+  // Try to read actual decimals from ERC20 contract
+  let erc20Contract = ERC20.bind(Address.fromBytes(tokenAddress))
+  let decimalsResult = erc20Contract.try_decimals()
+  
+  if (!decimalsResult.reverted) {
+    return BigInt.fromI32(decimalsResult.value)
+  }
+  
+  // Fallback to 18 decimals if contract call fails
+  return BigInt.fromI32(18)
+}
