@@ -136,6 +136,17 @@ export function handleOfferingDeployed(event: OfferingDeployedEvent): void {
     offering.payoutStatus = "not_applicable"
   }
   
+  // Initialize predictable payout fields
+  offering.totalPayoutRounds = BigInt.fromI32(0) // Will be set when wrapped token is created
+  offering.payoutPeriodDuration = BigInt.fromI32(0) // Will be set when wrapped token is created
+  offering.firstPayoutDate = BigInt.fromI32(0) // Will be set when first payout date is set
+  offering.payoutScheduleCreated = false
+  offering.expectedPayoutPerRound = BigInt.fromI32(0)
+  offering.totalExpectedPayouts = BigInt.fromI32(0)
+  offering.payoutScheduleAccuracy = BigInt.fromI32(10000) // 100% initially
+  offering.payoutTimingAccuracy = BigInt.fromI32(10000) // 100% initially
+  offering.completedPayoutRounds = BigInt.fromI32(0)
+  
   // Set timestamps
   offering.createdAt = event.block.timestamp
   offering.createdBlock = event.block.number

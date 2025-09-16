@@ -140,6 +140,60 @@ function createPayoutSchedule(wrappedToken: WrappedToken, timestamp: BigInt): vo
   }
 }
 
+// Create offering-level payout rounds when first payout date is set
+function createOfferingPayoutRounds(
+  offeringAddress: Address,
+  wrappedToken: WrappedToken,
+  timestamp: BigInt
+): void {
+  if (wrappedToken.totalPayoutRounds.equals(BigInt.fromI32(0))) {
+    return // No rounds to create
+  }
+  
+  // Calculate expected payout amount per round
+  let expectedAmountPerRound = BigInt.fromI32(0)
+  if (wrappedToken.totalUSDTInvested.gt(BigInt.fromI32(0))) {
+    let secondsPerYear = BigInt.fromI32(365 * 24 * 60 * 60)
+    let periodAPR = wrappedToken.payoutAPR.times(wrappedToken.payoutPeriodDuration).div(secondsPerYear)
+    expectedAmountPerRound = wrappedToken.totalUSDTInvested.times(periodAPR).div(BigInt.fromI32(10000))
+  }
+  
+  // Create offering payout rounds for all periods
+  for (let i = BigInt.fromI32(1); i.le(wrappedToken.totalPayoutRounds); i = i.plus(BigInt.fromI32(1))) {
+    let roundId = offeringAddress.toHexString() + "-round-" + i.toString()
+    let payoutRound = new OfferingPayoutRound(Bytes.fromUTF8(roundId))
+    
+    payoutRound.offering = offeringAddress
+    payoutRound.offeringAddress = offeringAddress
+    payoutRound.wrappedToken = wrappedToken.id
+    payoutRound.wrappedTokenAddress = wrappedToken.id
+    payoutRound.roundNumber = i
+    
+    // Calculate expected payout time: firstPayoutDate + (round - 1) * duration
+    payoutRound.expectedPayoutTime = wrappedToken.firstPayoutDate.plus(
+      i.minus(BigInt.fromI32(1)).times(wrappedToken.payoutPeriodDuration)
+    )
+    
+    payoutRound.expectedAmount = expectedAmountPerRound
+    payoutRound.actualPayoutTime = BigInt.fromI32(0)
+    payoutRound.actualAmount = BigInt.fromI32(0)
+    payoutRound.isDistributed = false
+    payoutRound.isOnTime = false
+    payoutRound.delayInSeconds = BigInt.fromI32(0)
+    payoutRound.amountVariance = BigInt.fromI32(0)
+    payoutRound.timingAccuracy = BigInt.fromI32(10000) // 100%
+    payoutRound.amountAccuracy = BigInt.fromI32(10000) // 100%
+    payoutRound.status = "scheduled"
+    payoutRound.eligibleInvestors = wrappedToken.activeHolders
+    payoutRound.totalClaimsForRound = BigInt.fromI32(0)
+    payoutRound.totalClaimedAmount = BigInt.fromI32(0)
+    payoutRound.claimRate = BigInt.fromI32(0)
+    payoutRound.createdAt = timestamp
+    payoutRound.updatedAt = timestamp
+    
+    payoutRound.save()
+  }
+}
 // Update payout schedule when distribution happens
 function updatePayoutScheduleOnDistribution(
   wrappedTokenAddress: Address,
@@ -312,6 +366,61 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
     offering.totalPayoutVolume = offering.totalPayoutVolume.plus(event.params.amount)
     offering.currentPayoutPeriod = event.params.period
     offering.nextPayoutTime = calculateNextPayoutTime(wrappedToken, event.block.timestamp)
+    offering.completedPayoutRounds = event.params.period
+    
+    // Update offering-level payout round
+    let roundId = offering.id.toHexString() + "-round-" + event.params.period.toString()
+    let payoutRound = OfferingPayoutRound.load(Bytes.fromUTF8(roundId))
+    
+    if (payoutRound) {
+      payoutRound.actualPayoutTime = event.block.timestamp
+      payoutRound.actualAmount = event.params.amount
+      payoutRound.isDistributed = true
+      payoutRound.eligibleInvestors = wrappedToken.activeHolders
+      
+      // Calculate timing accuracy
+      if (payoutRound.expectedPayoutTime.gt(BigInt.fromI32(0))) {
+        payoutRound.delayInSeconds = event.block.timestamp.minus(payoutRound.expectedPayoutTime)
+        let tolerance = BigInt.fromI32(3600) // 1 hour tolerance
+        payoutRound.isOnTime = payoutRound.delayInSeconds.le(tolerance) && payoutRound.delayInSeconds.ge(BigInt.fromI32(-3600))
+        
+        // Calculate timing accuracy percentage (closer to expected time = higher accuracy)
+        let maxDelay = BigInt.fromI32(86400) // 24 hours max delay for calculation
+        let absDelay = payoutRound.delayInSeconds.lt(BigInt.fromI32(0)) 
+          ? payoutRound.delayInSeconds.times(BigInt.fromI32(-1)) 
+          : payoutRound.delayInSeconds
+        
+        if (absDelay.le(tolerance)) {
+          payoutRound.timingAccuracy = BigInt.fromI32(10000) // Perfect timing
+        } else if (absDelay.le(maxDelay)) {
+          // Linear decrease from 10000 to 5000 based on delay
+          let accuracyReduction = absDelay.times(BigInt.fromI32(5000)).div(maxDelay)
+          payoutRound.timingAccuracy = BigInt.fromI32(10000).minus(accuracyReduction)
+        } else {
+          payoutRound.timingAccuracy = BigInt.fromI32(5000) // Minimum 50% for very late payouts
+        }
+      } else {
+        payoutRound.isOnTime = true
+        payoutRound.delayInSeconds = BigInt.fromI32(0)
+        payoutRound.timingAccuracy = BigInt.fromI32(10000)
+      }
+      
+      // Calculate amount accuracy
+      if (payoutRound.expectedAmount.gt(BigInt.fromI32(0))) {
+        payoutRound.amountVariance = event.params.amount.minus(payoutRound.expectedAmount)
+        payoutRound.amountAccuracy = event.params.amount.times(BigInt.fromI32(10000)).div(payoutRound.expectedAmount)
+      } else {
+        payoutRound.amountVariance = BigInt.fromI32(0)
+        payoutRound.amountAccuracy = BigInt.fromI32(10000)
+      }
+      
+      payoutRound.status = "distributed"
+      payoutRound.updatedAt = event.block.timestamp
+      payoutRound.save()
+    }
+    
+    // Update offering-level accuracy metrics
+    updateOfferingAccuracyMetrics(offering, event.params.period)
     
     // Update offering status based on completion
     if (event.params.period.ge(wrappedToken.totalPayoutRounds)) {
@@ -480,6 +589,30 @@ export function handlePayoutClaimed(event: PayoutClaimedEvent): void {
   let offering = Offering.load(wrappedToken.offeringAddress)
   if (offering) {
     offering.totalPayoutsClaimed = offering.totalPayoutsClaimed.plus(event.params.amount)
+    
+    // Update offering-level payout round claim statistics
+    let roundId = offering.id.toHexString() + "-round-" + event.params.period.toString()
+    let payoutRound = OfferingPayoutRound.load(Bytes.fromUTF8(roundId))
+    
+    if (payoutRound) {
+      payoutRound.totalClaimsForRound = payoutRound.totalClaimsForRound.plus(BigInt.fromI32(1))
+      payoutRound.totalClaimedAmount = payoutRound.totalClaimedAmount.plus(event.params.amount)
+      
+      // Update claim rate
+      if (payoutRound.actualAmount.gt(BigInt.fromI32(0))) {
+        payoutRound.claimRate = payoutRound.totalClaimedAmount.times(BigInt.fromI32(10000)).div(payoutRound.actualAmount)
+      }
+      
+      // Update status based on claim completion
+      if (payoutRound.claimRate.equals(BigInt.fromI32(10000))) {
+        payoutRound.status = "completed"
+      } else if (payoutRound.claimRate.gt(BigInt.fromI32(0))) {
+        payoutRound.status = "distributed" // Partially claimed
+      }
+      
+      payoutRound.updatedAt = event.block.timestamp
+      payoutRound.save()
+    }
     
     // Update payout status based on claim activity
     if (offering.currentPayoutPeriod.gt(BigInt.fromI32(0))) {
@@ -867,10 +1000,23 @@ export function handleFirstPayoutDateSet(event: FirstPayoutDateSetEvent): void {
   // Update linked offering
   let offering = Offering.load(wrappedToken.offeringAddress)
   if (offering) {
+    // Update offering with payout schedule information
+    offering.firstPayoutDate = event.params.firstPayoutDate
+    offering.totalPayoutRounds = wrappedToken.totalPayoutRounds
+    offering.payoutPeriodDuration = wrappedToken.payoutPeriodDuration
     offering.nextPayoutTime = event.params.firstPayoutDate
     offering.maturityDate = wrappedToken.maturityDate
     offering.payoutStatus = "ready"
+    offering.payoutScheduleCreated = true
+    offering.expectedPayoutPerRound = wrappedToken.expectedPayoutPerPeriod
+    offering.totalExpectedPayouts = wrappedToken.totalExpectedPayouts
+    offering.payoutScheduleAccuracy = BigInt.fromI32(10000) // 100% initially
+    offering.payoutTimingAccuracy = BigInt.fromI32(10000) // 100% initially
+    offering.completedPayoutRounds = BigInt.fromI32(0)
     offering.save()
+    
+    // Create offering-level payout rounds
+    createOfferingPayoutRounds(wrappedToken.offeringAddress, wrappedToken, event.block.timestamp)
   }
 
   // Create the complete payout schedule
@@ -1030,6 +1176,34 @@ function notifyHoldersAboutPayoutSchedule(
 ): void {
   // This would notify all holders about payout schedule
   // Implementation would depend on your notification strategy
+}
+
+// Update offering-level accuracy metrics
+function updateOfferingAccuracyMetrics(offering: Offering, currentPeriod: BigInt): void {
+  if (currentPeriod.equals(BigInt.fromI32(0))) return
+  
+  // Calculate overall timing accuracy across all completed rounds
+  let totalTimingAccuracy = BigInt.fromI32(0)
+  let totalAmountAccuracy = BigInt.fromI32(0)
+  let completedRounds = BigInt.fromI32(0)
+  
+  // Iterate through completed payout rounds to calculate averages
+  for (let i = BigInt.fromI32(1); i.le(currentPeriod); i = i.plus(BigInt.fromI32(1))) {
+    let roundId = offering.id.toHexString() + "-round-" + i.toString()
+    let payoutRound = OfferingPayoutRound.load(Bytes.fromUTF8(roundId))
+    
+    if (payoutRound && payoutRound.isDistributed) {
+      totalTimingAccuracy = totalTimingAccuracy.plus(payoutRound.timingAccuracy)
+      totalAmountAccuracy = totalAmountAccuracy.plus(payoutRound.amountAccuracy)
+      completedRounds = completedRounds.plus(BigInt.fromI32(1))
+    }
+  }
+  
+  // Update offering accuracy metrics
+  if (completedRounds.gt(BigInt.fromI32(0))) {
+    offering.payoutTimingAccuracy = totalTimingAccuracy.div(completedRounds)
+    offering.payoutScheduleAccuracy = totalAmountAccuracy.div(completedRounds)
+  }
 }
 
 function getTokenSymbol(tokenAddress: Bytes): string {

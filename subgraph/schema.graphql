@@ -260,6 +260,17 @@ type Offering @entity {
   nextPayoutTime: BigInt!
   payoutStatus: String! # "not_applicable", "waiting", "ready", "active", "completed"
   
+  # Predictable Payout Schedule (for APY-enabled offerings)
+  totalPayoutRounds: BigInt!
+  payoutPeriodDuration: BigInt!
+  firstPayoutDate: BigInt!
+  payoutScheduleCreated: Boolean!
+  expectedPayoutPerRound: BigInt!
+  totalExpectedPayouts: BigInt!
+  payoutScheduleAccuracy: BigInt! # basis points (10000 = 100%)
+  payoutTimingAccuracy: BigInt! # basis points for on-time delivery
+  completedPayoutRounds: BigInt!
+  
   # Timestamps
   createdAt: BigInt!
   createdBlock: BigInt!
@@ -277,6 +288,10 @@ type Offering @entity {
   payoutPeriods: [PayoutPeriod!]! @derivedFrom(field: "offering")
   userPayouts: [UserPayout!]! @derivedFrom(field: "offering")
   upcomingPayouts: [UserUpcomingPayout!]! @derivedFrom(field: "offering")
+  
+  # Predictable payout schedule
+  payoutRounds: [OfferingPayoutRound!]! @derivedFrom(field: "offering")
+}
 }
 
 type OfferingInvestmentTransaction @entity {
@@ -469,6 +484,37 @@ type PayoutSchedule @entity {
   status: String! # "scheduled", "due", "distributed", "overdue"
   createdAt: BigInt!
   updatedAt: BigInt!
+}
+
+# New entity to track offering-level payout rounds (predictable schedule)
+type OfferingPayoutRound @entity {
+  id: Bytes! # offering address + round number
+  offering: Offering!
+  offeringAddress: Bytes!
+  wrappedToken: WrappedToken
+  wrappedTokenAddress: Bytes
+  roundNumber: BigInt!
+  expectedPayoutTime: BigInt!
+  expectedAmount: BigInt!
+  actualPayoutTime: BigInt!
+  actualAmount: BigInt!
+  isDistributed: Boolean!
+  isOnTime: Boolean!
+  delayInSeconds: BigInt!
+  amountVariance: BigInt! # actual - expected
+  timingAccuracy: BigInt! # basis points (10000 = perfect timing)
+  amountAccuracy: BigInt! # basis points (10000 = perfect amount)
+  status: String! # "scheduled", "due", "distributed", "completed", "overdue"
+  eligibleInvestors: BigInt!
+  totalClaimsForRound: BigInt!
+  totalClaimedAmount: BigInt!
+  claimRate: BigInt! # basis points (claimed/distributed * 10000)
+  createdAt: BigInt!
+  updatedAt: BigInt!
+  
+  # Link to the actual payout distribution when it happens
+  payoutDistribution: PayoutDistribution
+  payoutPeriod: PayoutPeriod
 }
 
 type UserUpcomingPayout @entity {

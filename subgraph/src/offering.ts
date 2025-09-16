@@ -150,12 +150,17 @@ export function handleOfferingFinalized(event: OfferingFinalizedEvent): void {
     offering.payoutStatus = "ready"
     offering.nextPayoutTime = BigInt.fromI32(0)
     
+    // Initialize predictable payout tracking
+    offering.payoutScheduleCreated = false
+    offering.completedPayoutRounds = BigInt.fromI32(0)
+    
     // The wrapped token's setFirstPayoutDate() will be called after this event
-    // We'll update the nextPayoutTime when that happens
+    // We'll create the complete payout schedule when that happens
   } else {
     // Non-APY offerings don't have payouts
     offering.payoutStatus = "not_applicable"
     offering.nextPayoutTime = BigInt.fromI32(0)
+    offering.payoutScheduleCreated = false
   }
   
   offering.save()
