@@ -45,6 +45,9 @@ export function handleWrappedTokenDeployed(event: WrappedTokenDeployedEvent): vo
   let payoutPeriodDurationResult = wrappedTokenContract.try_payoutPeriodDuration()
   wrappedToken.payoutPeriodDuration = payoutPeriodDurationResult.reverted ? BigInt.fromI32(0) : payoutPeriodDurationResult.value
   
+  let totalPayoutRoundResult = wrappedTokenContract.try_totalPayoutRound()
+  wrappedToken.totalPayoutRounds = totalPayoutRoundResult.reverted ? BigInt.fromI32(0) : totalPayoutRoundResult.value
+  
   let firstPayoutDateResult = wrappedTokenContract.try_firstPayoutDate()
   wrappedToken.firstPayoutDate = firstPayoutDateResult.reverted ? BigInt.fromI32(0) : firstPayoutDateResult.value
   
@@ -53,11 +56,18 @@ export function handleWrappedTokenDeployed(event: WrappedTokenDeployedEvent): vo
   
   wrappedToken.lastPayoutDistributionTime = BigInt.fromI32(0) // This will be updated on first distribution
   
+  // Calculate expected payout amounts based on APR and total USDT
+  wrappedToken.expectedPayoutPerPeriod = BigInt.fromI32(0) // Will be calculated when USDT is known
+  wrappedToken.totalExpectedPayouts = BigInt.fromI32(0)
+  wrappedToken.payoutVariance = BigInt.fromI32(0)
+  wrappedToken.payoutAccuracy = BigInt.fromI32(10000) // 100% initially
+  
   // Initialize payout timing fields
   wrappedToken.nextPayoutTime = BigInt.fromI32(0) // Will be set when first payout date is established
   wrappedToken.isPayoutPeriodAvailable = false
   wrappedToken.requiredPayoutTokens = BigInt.fromI32(0)
   wrappedToken.payoutStatus = "waiting"
+  wrappedToken.payoutScheduleStatus = "not_set"
   
   let totalSupplyResult = wrappedTokenContract.try_totalSupply()
   wrappedToken.totalSupply = totalSupplyResult.reverted ? BigInt.fromI32(0) : totalSupplyResult.value

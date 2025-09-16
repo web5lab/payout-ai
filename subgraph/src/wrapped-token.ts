@@ -19,6 +19,7 @@ import {
   PayoutPeriod,
   UserUpcomingPayout,
   PayoutCalculation,
+  PayoutSchedule,
   UserNotification,
   UserActivityHistory,
   Offering
@@ -178,6 +179,17 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
   let wrappedToken = WrappedToken.load(event.address)
   if (!wrappedToken) return
 
+  // Update payout schedule entry
+  updatePayoutScheduleOnDistribution(
+    event.address,
+    event.params.period,
+    event.params.amount,
+    event.block.timestamp
+  )
+
+  // Update expected vs actual tracking
+  updatePayoutAccuracyMetrics(wrappedToken, event.params.amount, event.params.period)
+
   // Update offering payout statistics
   let offering = Offering.load(wrappedToken.offeringAddress)
   if (offering) {
@@ -185,7 +197,16 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
     offering.totalPayoutVolume = offering.totalPayoutVolume.plus(event.params.amount)
     offering.currentPayoutPeriod = event.params.period
     offering.nextPayoutTime = calculateNextPayoutTime(wrappedToken, event.block.timestamp)
-    offering.payoutStatus = "distributed"
+    
+    // Update offering status based on completion
+    if (event.params.period.ge(wrappedToken.totalPayoutRounds)) {
+      offering.payoutStatus = "completed"
+      wrappedToken.payoutScheduleStatus = "completed"
+    } else {
+      offering.payoutStatus = "active"
+      wrappedToken.payoutScheduleStatus = "active"
+    }
+    
     offering.save()
   }
 
@@ -263,6 +284,39 @@ export function handlePayoutDistributed(event: PayoutDistributedEvent): void {
     payoutPeriod.periodNumber = event.params.period
     payoutPeriod.totalClaims = BigInt.fromI32(0)
     payoutPeriod.totalClaimedAmount = BigInt.fromI32(0)
+    
+    // Set expected values from schedule
+    let scheduleId = event.address.toHexString() + "-" + event.params.period.toString() + "-schedule"
+    let schedule = PayoutSchedule.load(Bytes.fromUTF8(scheduleId))
+    if (schedule) {
+      payoutPeriod.expectedStartTime = schedule.expectedPayoutTime
+      payoutPeriod.expectedEndTime = schedule.expectedPayoutTime.plus(wrappedToken.payoutPeriodDuration)
+      payoutPeriod.expectedAmount = schedule.expectedAmount
+      payoutPeriod.actualAmount = event.params.amount
+      payoutPeriod.amountVariance = event.params.amount.minus(schedule.expectedAmount)
+      
+      // Calculate accuracy percentage
+      if (schedule.expectedAmount.gt(BigInt.fromI32(0))) {
+        payoutPeriod.accuracyPercentage = event.params.amount.times(BigInt.fromI32(10000)).div(schedule.expectedAmount)
+      } else {
+        payoutPeriod.accuracyPercentage = BigInt.fromI32(10000)
+      }
+      
+      // Check if on schedule (within 1 hour tolerance)
+      let tolerance = BigInt.fromI32(3600) // 1 hour
+      payoutPeriod.delayFromSchedule = event.block.timestamp.minus(schedule.expectedPayoutTime)
+      payoutPeriod.isOnSchedule = payoutPeriod.delayFromSchedule.le(tolerance)
+    } else {
+      // Fallback values if schedule not found
+      payoutPeriod.expectedStartTime = BigInt.fromI32(0)
+      payoutPeriod.expectedEndTime = BigInt.fromI32(0)
+      payoutPeriod.expectedAmount = BigInt.fromI32(0)
+      payoutPeriod.actualAmount = event.params.amount
+      payoutPeriod.amountVariance = BigInt.fromI32(0)
+      payoutPeriod.accuracyPercentage = BigInt.fromI32(10000)
+      payoutPeriod.isOnSchedule = true
+      payoutPeriod.delayFromSchedule = BigInt.fromI32(0)
+    }
   }
   
   payoutPeriod.startTime = wrappedToken.lastPayoutDistributionTime
@@ -684,15 +738,28 @@ export function handleFirstPayoutDateSet(event: FirstPayoutDateSetEvent): void {
   wrappedToken.nextPayoutTime = event.params.firstPayoutDate
   wrappedToken.isPayoutPeriodAvailable = false // Not available yet, just scheduled
   wrappedToken.payoutStatus = "ready"
+  wrappedToken.payoutScheduleStatus = "scheduled"
+  
+  // Calculate maturity date: firstPayoutDate + (totalPayoutRounds * payoutPeriodDuration)
+  wrappedToken.maturityDate = event.params.firstPayoutDate.plus(
+    wrappedToken.totalPayoutRounds.times(wrappedToken.payoutPeriodDuration)
+  )
+  
+  // Calculate expected payout amounts now that we have the schedule
+  updateExpectedPayoutCalculations(wrappedToken)
   wrappedToken.save()
 
   // Update linked offering
   let offering = Offering.load(wrappedToken.offeringAddress)
   if (offering) {
     offering.nextPayoutTime = event.params.firstPayoutDate
+    offering.maturityDate = wrappedToken.maturityDate
     offering.payoutStatus = "ready"
     offering.save()
   }
+
+  // Create the complete payout schedule
+  createPayoutSchedule(wrappedToken, event.block.timestamp)
 
   // Notify all holders about payout schedule
   notifyHoldersAboutPayoutSchedule(event.address, event.params.firstPayoutDate, event.block.timestamp)
@@ -807,17 +874,16 @@ function createUpcomingPayoutForUser(
   }
   
   // Calculate estimated payout time
-  if (periodNumber.equals(BigInt.fromI32(1))) {
-    // First period - use firstPayoutDate if available
-    if (wrappedToken.firstPayoutDate.gt(BigInt.fromI32(0))) {
-      upcomingPayout.estimatedPayoutTime = wrappedToken.firstPayoutDate
-    } else {
-      // Estimate based on current time + period duration
-      upcomingPayout.estimatedPayoutTime = timestamp.plus(wrappedToken.payoutPeriodDuration)
-    }
+  // Use predictable schedule calculation
+  if (wrappedToken.firstPayoutDate.gt(BigInt.fromI32(0))) {
+    upcomingPayout.expectedPayoutTime = wrappedToken.firstPayoutDate.plus(
+      periodNumber.minus(BigInt.fromI32(1)).times(wrappedToken.payoutPeriodDuration)
+    )
   } else {
-    // Subsequent periods
-    upcomingPayout.estimatedPayoutTime = calculateNextPayoutTime(wrappedToken, timestamp)
+    // Fallback if first payout date not set yet
+    upcomingPayout.expectedPayoutTime = timestamp.plus(
+      periodNumber.times(wrappedToken.payoutPeriodDuration)
+    )
   }
   
   upcomingPayout.updatedAt = timestamp

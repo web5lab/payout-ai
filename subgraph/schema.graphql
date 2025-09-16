@@ -352,11 +352,16 @@ type WrappedToken @entity {
   maturityDate: BigInt!
   payoutAPR: BigInt!
   payoutPeriodDuration: BigInt!
+  totalPayoutRounds: BigInt!
   firstPayoutDate: BigInt!
   currentPayoutPeriod: BigInt!
   lastPayoutDistributionTime: BigInt!
   nextPayoutTime: BigInt!
   isPayoutPeriodAvailable: Boolean!
+  expectedPayoutPerPeriod: BigInt!
+  totalExpectedPayouts: BigInt!
+  payoutVariance: BigInt! # Difference between expected and actual
+  payoutAccuracy: BigInt! # Percentage accuracy in basis points
   totalSupply: BigInt!
   totalEscrowed: BigInt!
   totalUSDTInvested: BigInt!
@@ -365,6 +370,7 @@ type WrappedToken @entity {
   currentPayoutFunds: BigInt!
   requiredPayoutTokens: BigInt!
   payoutStatus: String! # "waiting", "ready", "distributed", "completed"
+  payoutScheduleStatus: String! # "not_set", "scheduled", "active", "completed"
   emergencyUnlockEnabled: Boolean!
   emergencyUnlockPenalty: BigInt!
   totalEmergencyUnlocks: BigInt!
@@ -376,6 +382,7 @@ type WrappedToken @entity {
   # Derived relationships
   payoutPeriods: [PayoutPeriod!]! @derivedFrom(field: "wrappedToken")
   upcomingPayouts: [UserUpcomingPayout!]! @derivedFrom(field: "wrappedToken")
+  payoutSchedule: [PayoutSchedule!]! @derivedFrom(field: "wrappedToken")
 }
 
 type WrappedTokenDeployment @entity {
@@ -418,6 +425,12 @@ type PayoutPeriod @entity {
   offering: Offering # Link to offering (null if not APY-enabled)
   offeringAddress: Bytes!
   periodNumber: BigInt!
+  expectedStartTime: BigInt!
+  expectedEndTime: BigInt!
+  expectedAmount: BigInt!
+  actualAmount: BigInt!
+  amountVariance: BigInt!
+  accuracyPercentage: BigInt! # basis points
   startTime: BigInt!
   endTime: BigInt!
   distributedAmount: BigInt!
@@ -430,8 +443,32 @@ type PayoutPeriod @entity {
   claimRate: BigInt! # basis points
   eligibleUsers: BigInt!
   status: String! # "upcoming", "active", "distributed", "completed"
+  isOnSchedule: Boolean!
+  delayFromSchedule: BigInt! # seconds delayed from expected time
   blockNumber: BigInt!
   transactionHash: Bytes!
+}
+
+# New entity to track the complete payout schedule
+type PayoutSchedule @entity {
+  id: Bytes! # wrapped token address + period number + "schedule"
+  wrappedToken: WrappedToken!
+  wrappedTokenAddress: Bytes!
+  offering: Offering!
+  offeringAddress: Bytes!
+  periodNumber: BigInt!
+  expectedPayoutTime: BigInt!
+  expectedAmount: BigInt!
+  actualPayoutTime: BigInt!
+  actualAmount: BigInt!
+  isDistributed: Boolean!
+  isOnTime: Boolean!
+  delayInSeconds: BigInt!
+  amountVariance: BigInt!
+  accuracyPercentage: BigInt! # basis points
+  status: String! # "scheduled", "due", "distributed", "overdue"
+  createdAt: BigInt!
+  updatedAt: BigInt!
 }
 
 type UserUpcomingPayout @entity {
@@ -443,6 +480,7 @@ type UserUpcomingPayout @entity {
   offering: Offering # Link to offering (null if not APY-enabled)
   offeringAddress: Bytes!
   periodNumber: BigInt!
+  expectedPayoutTime: BigInt!
   estimatedAmount: BigInt!
   userUSDTValue: BigInt!
   totalUSDTAtPeriod: BigInt!
@@ -450,7 +488,6 @@ type UserUpcomingPayout @entity {
   isClaimable: Boolean!
   isDistributed: Boolean!
   isClaimed: Boolean!
-  estimatedPayoutTime: BigInt!
   actualPayoutTime: BigInt!
   claimedAt: BigInt!
   createdAt: BigInt!
