@@ -93,6 +93,121 @@ function updateUpcomingPayoutsForPeriod(
   // This function serves as a placeholder for batch updates
   // Individual upcoming payouts are updated in handlePayoutClaimed
 }
+
+// Create complete payout schedule when first payout date is set
+function createPayoutSchedule(wrappedToken: WrappedToken, timestamp: BigInt): void {
+  if (wrappedToken.totalPayoutRounds.equals(BigInt.fromI32(0))) {
+    return // No schedule to create
+  }
+  
+  // Calculate expected payout amount per period
+  let expectedAmountPerPeriod = BigInt.fromI32(0)
+  if (wrappedToken.totalUSDTInvested.gt(BigInt.fromI32(0))) {
+    let secondsPerYear = BigInt.fromI32(365 * 24 * 60 * 60)
+    let periodAPR = wrappedToken.payoutAPR.times(wrappedToken.payoutPeriodDuration).div(secondsPerYear)
+    expectedAmountPerPeriod = wrappedToken.totalUSDTInvested.times(periodAPR).div(BigInt.fromI32(10000))
+  }
+  
+  // Create schedule entries for all payout periods
+  for (let i = BigInt.fromI32(1); i.le(wrappedToken.totalPayoutRounds); i = i.plus(BigInt.fromI32(1))) {
+    let scheduleId = wrappedToken.id.toHexString() + "-" + i.toString() + "-schedule"
+    let schedule = new PayoutSchedule(Bytes.fromUTF8(scheduleId))
+    
+    schedule.wrappedToken = wrappedToken.id
+    schedule.wrappedTokenAddress = wrappedToken.id
+    schedule.offering = wrappedToken.offeringAddress
+    schedule.offeringAddress = wrappedToken.offeringAddress
+    schedule.periodNumber = i
+    
+    // Calculate expected payout time: firstPayoutDate + (period - 1) * duration
+    schedule.expectedPayoutTime = wrappedToken.firstPayoutDate.plus(
+      i.minus(BigInt.fromI32(1)).times(wrappedToken.payoutPeriodDuration)
+    )
+    
+    schedule.expectedAmount = expectedAmountPerPeriod
+    schedule.actualPayoutTime = BigInt.fromI32(0)
+    schedule.actualAmount = BigInt.fromI32(0)
+    schedule.isDistributed = false
+    schedule.isOnTime = false
+    schedule.delayInSeconds = BigInt.fromI32(0)
+    schedule.amountVariance = BigInt.fromI32(0)
+    schedule.accuracyPercentage = BigInt.fromI32(10000) // 100%
+    schedule.status = "scheduled"
+    schedule.createdAt = timestamp
+    schedule.updatedAt = timestamp
+    
+    schedule.save()
+  }
+}
+
+// Update payout schedule when distribution happens
+function updatePayoutScheduleOnDistribution(
+  wrappedTokenAddress: Address,
+  period: BigInt,
+  actualAmount: BigInt,
+  timestamp: BigInt
+): void {
+  let scheduleId = wrappedTokenAddress.toHexString() + "-" + period.toString() + "-schedule"
+  let schedule = PayoutSchedule.load(Bytes.fromUTF8(scheduleId))
+  
+  if (schedule) {
+    schedule.actualPayoutTime = timestamp
+    schedule.actualAmount = actualAmount
+    schedule.isDistributed = true
+    
+    // Calculate timing accuracy
+    if (schedule.expectedPayoutTime.gt(BigInt.fromI32(0))) {
+      schedule.delayInSeconds = timestamp.minus(schedule.expectedPayoutTime)
+      let tolerance = BigInt.fromI32(3600) // 1 hour tolerance
+      schedule.isOnTime = schedule.delayInSeconds.le(tolerance) && schedule.delayInSeconds.ge(BigInt.fromI32(-3600))
+    } else {
+      schedule.isOnTime = true
+      schedule.delayInSeconds = BigInt.fromI32(0)
+    }
+    
+    // Calculate amount accuracy
+    if (schedule.expectedAmount.gt(BigInt.fromI32(0))) {
+      schedule.amountVariance = actualAmount.minus(schedule.expectedAmount)
+      schedule.accuracyPercentage = actualAmount.times(BigInt.fromI32(10000)).div(schedule.expectedAmount)
+    } else {
+      schedule.amountVariance = BigInt.fromI32(0)
+      schedule.accuracyPercentage = BigInt.fromI32(10000)
+    }
+    
+    schedule.status = "distributed"
+    schedule.updatedAt = timestamp
+    schedule.save()
+  }
+}
+
+// Update expected payout calculations
+function updateExpectedPayoutCalculations(wrappedToken: WrappedToken): void {
+  if (wrappedToken.totalUSDTInvested.gt(BigInt.fromI32(0)) && wrappedToken.totalPayoutRounds.gt(BigInt.fromI32(0))) {
+    // Calculate expected payout per period
+    let secondsPerYear = BigInt.fromI32(365 * 24 * 60 * 60)
+    let periodAPR = wrappedToken.payoutAPR.times(wrappedToken.payoutPeriodDuration).div(secondsPerYear)
+    wrappedToken.expectedPayoutPerPeriod = wrappedToken.totalUSDTInvested.times(periodAPR).div(BigInt.fromI32(10000))
+    
+    // Calculate total expected payouts over all periods
+    wrappedToken.totalExpectedPayouts = wrappedToken.expectedPayoutPerPeriod.times(wrappedToken.totalPayoutRounds)
+  }
+}
+
+// Update payout accuracy metrics
+function updatePayoutAccuracyMetrics(wrappedToken: WrappedToken, actualAmount: BigInt, period: BigInt): void {
+  // Calculate variance from expected
+  if (wrappedToken.expectedPayoutPerPeriod.gt(BigInt.fromI32(0))) {
+    let variance = actualAmount.minus(wrappedToken.expectedPayoutPerPeriod)
+    wrappedToken.payoutVariance = wrappedToken.payoutVariance.plus(variance)
+    
+    // Calculate overall accuracy
+    let totalExpectedSoFar = wrappedToken.expectedPayoutPerPeriod.times(period)
+    if (totalExpectedSoFar.gt(BigInt.fromI32(0))) {
+      wrappedToken.payoutAccuracy = wrappedToken.totalPayoutFundsDistributed.times(BigInt.fromI32(10000)).div(totalExpectedSoFar)
+    }
+  }
+}
+
 export function handleInvestmentRegistered(event: InvestmentRegisteredEvent): void {
   let user = getOrCreateUser(event.params.user, event.block.timestamp)
   let wrappedToken = WrappedToken.load(event.address)
